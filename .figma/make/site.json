@@ -1,0 +1,10 @@
+{
+  "description": "Generates tailored web applications based on user prompts, enabling quick and customized app creation for developers and businesses.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
