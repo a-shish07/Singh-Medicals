@@ -1,7 +1,7 @@
 export type Category = 'Tablets' | 'Syrups' | 'Injections' | 'Eye Drops' | 'Topical';
 export type OrderStatus = 'Submitted' | 'Confirmed' | 'Packed' | 'Dispatched' | 'Delivered' | 'Cancelled';
-export type Page = 'home' | 'catalogue' | 'product' | 'cart' | 'checkout' | 'confirmation' | 'login' | 'orders' | 'tracking' | 'about' | 'contact' | 'faq' | 'terms' | 'privacy' | 'notfound' | 'admin';
-export type AdminTab = 'orders' | 'products' | 'import';
+export type Page = 'home' | 'catalogue' | 'product' | 'cart' | 'checkout' | 'confirmation' | 'login' | 'orders' | 'tracking' | 'about' | 'contact' | 'faq' | 'terms' | 'privacy' | 'notfound' | 'admin' | 'profile';
+export type AdminTab = 'orders' | 'products' | 'customers' | 'import';
 
 export interface Product {
   id: string;
@@ -14,6 +14,40 @@ export interface Product {
   net: number;
   scheme?: string;
   expiry: string;
+  stock?: number;
+  isActive?: boolean;
+  medicineType?: string;
+productType?: string;
+countryOfOrigin?: string;
+sku?: string;
+barcode?: string;
+prescriptionRequired?: boolean;
+image?: string;
+description?: string;
+
+inventoryBatches?: InventoryBatch[];
+
+inventorySummary?: {
+  totalQuantity: number;
+  batchCount: number;
+  expiringSoon: number;
+};
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  shopName?: string | null;
+  address?: string | null;
+  createdAt: string;
+  orderCount: number;
+  gstNumber?: string;
+drugLicence?: string;
+city?: string;
+state?: string;
+pincode?: string;
 }
 
 export interface CartItem {
@@ -38,6 +72,7 @@ export interface Order {
   items: OrderItem[];
   total: number;
   status: OrderStatus;
+  paymentMethod: 'COD';
 }
 
 export interface ToastMsg {
@@ -50,4 +85,17 @@ export interface CheckoutDetails {
   shopName: string;
   address: string;
   contact: string;
+}
+
+export interface InventoryBatch {
+  id: string;
+  productId: string;
+  batchNumber: string;
+  quantity: number;
+  freeQuantity: number;
+  mrp: number;
+  ptr: number;
+  discount: number;
+  gst: number;
+  expiryDate: string;
 }

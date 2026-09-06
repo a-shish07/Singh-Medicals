@@ -29,6 +29,7 @@ import {
 } from "./pages/Legal";
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
+import Profile from "./pages/Profile";
 
 /* =========================================================
    PAGES WITHOUT FOOTER
@@ -60,6 +61,7 @@ const pageToPath: Record<string, string> = {
   privacy: "/privacy",
   admin: "/admin",
   notfound: "/404",
+  profile: "/profile",
 };
 
 /* =========================================================
@@ -98,6 +100,9 @@ function pathToPage(pathname: string) {
 
   if (path === "/orders") {
     return "orders";
+  }
+  if (path === "/profile") {
+    return "profile";
   }
 
   if (path === "/tracking") {
@@ -428,6 +433,7 @@ function AppShell() {
             {page === "confirmation" && <Confirmation />}
             {page === "login" && <Login />}
             {page === "orders" && <OrderHistory />}
+            {page === "profile" && <Profile />}
             {page === "tracking" && <Tracking />}
             {page === "about" && <About />}
             {page === "contact" && <Contact />}

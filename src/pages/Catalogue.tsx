@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../context';
-import { PRODUCTS, COMPANIES } from '../data';
-import type { Category } from '../types';
+import type { Category, Product } from '../types';
 
 const CATEGORIES: (Category | 'All')[] = ['All', 'Tablets', 'Syrups', 'Injections', 'Eye Drops', 'Topical'];
 
@@ -20,7 +19,7 @@ function DiscountBadge({ mrp, net }: { mrp: number; net: number }) {
   );
 }
 
-function ProductCard({ product }: { product: typeof PRODUCTS[0] }) {
+function ProductCard({ product }: { product: Product }) {
   const { cartItems, addToCart, updateQty, addToast, navigateToProduct } = useApp();
   const cartItem = cartItems.find(i => i.productId === product.id);
   const [localQty, setLocalQty] = useState(1);
@@ -121,19 +120,24 @@ function ProductCard({ product }: { product: typeof PRODUCTS[0] }) {
 }
 
 export default function Catalogue() {
+  const { products, cartItems, addToCart, updateQty, addToast, navigateToProduct } = useApp();
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [company, setCompany] = useState('All');
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return PRODUCTS.filter(p => {
+    return products.filter(p => {
       const matchSearch = !q || p.name.toLowerCase().includes(q) || p.company.toLowerCase().includes(q) || p.composition.toLowerCase().includes(q);
       const matchCat = category === 'All' || p.category === category;
       const matchCompany = company === 'All' || p.company === company;
       return matchSearch && matchCat && matchCompany;
     });
-  }, [search, category, company]);
+  }, [search, category, company, products]);
+
+  const companies = useMemo(() => {
+    return [...new Set(products.map(p => p.company))].sort();
+  }, [products]);
 
   return (
     <div className="min-h-screen">
@@ -204,7 +208,7 @@ export default function Catalogue() {
             className="px-3 py-1.5 text-sm bg-white border border-black/[0.08] rounded-xl text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30 focus:border-[#0D9A55] transition-all"
           >
             <option value="All">All Companies</option>
-            {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {companies.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
       </section>

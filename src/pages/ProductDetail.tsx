@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "../context";
-import { PRODUCTS } from "../data";
 import { pageVariants, itemVariants, staggerContainer } from "../lib/motionVariants";
 /* =========================================================
    ICONS
@@ -156,7 +155,9 @@ export default function ProductDetail() {
     addToast,
   } = useApp();
 
-  const product = PRODUCTS.find(
+  const { products } = useApp();
+
+  const product = products.find(
     (p) => p.id === selectedProductId
   );
 
@@ -234,7 +235,7 @@ export default function ProductDetail() {
     (item) => item.productId === product.id
   );
 
-  const similar = PRODUCTS.filter(
+  const similar = products.filter(
     (p) =>
       p.id !== product.id &&
       (p.category === product.category ||

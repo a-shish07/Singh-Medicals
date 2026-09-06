@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  SUBMITTED
+  CONFIRMED
+  PACKED
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  shopName     String?
+  gstNumber    String?
+  drugLicence  String?
+  profileImage String?
+  address      String?
+  city         String?
+  state        String?
+  pincode      String?
+  role         Role     @default(CUSTOMER)
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id                   String  @id @default(cuid())
+  name                 String
+  company              String
+  composition          String
+  category             String
+  medicineType         String?
+  productType          String?
+  pack                 String
+  countryOfOrigin      String?
+  sku                  String  @unique
+  barcode              String? @unique
+  prescriptionRequired Boolean @default(false)
+  image                String?
+  description          String?
+
+  // Kept temporarily so the existing customer/order APIs continue working.
+  mrp      Decimal  @db.Decimal(10, 2)
+  net      Decimal  @db.Decimal(10, 2)
+  scheme   String?
+  expiry   DateTime
+  stock    Int      @default(0)
+  isActive Boolean  @default(true)
+
+  inventoryBatches InventoryBatch[]
+  orderItems       OrderItem[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([name, company, pack])
+  @@index([name])
+  @@index([composition])
+  @@index([company])
+  @@index([category])
+}
+
+model InventoryBatch {
+  id           String   @id @default(cuid())
+  productId    String
+  batchNumber  String
+  quantity     Int      @default(0)
+  freeQuantity Int      @default(0)
+  mrp          Decimal  @db.Decimal(10, 2)
+  ptr          Decimal  @db.Decimal(10, 2)
+  discount     Decimal  @default(0) @db.Decimal(10, 2)
+  gst          Decimal  @default(0) @db.Decimal(5, 2)
+  expiryDate   DateTime
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([productId, batchNumber])
+  @@index([productId])
+  @@index([expiryDate])
+}
+
+model Order {
+  id              String             @id @default(cuid())
+  orderNumber     String             @unique
+  userId          String
+  user            User               @relation(fields: [userId], references: [id])
+  deliveryName    String
+  deliveryShop    String
+  deliveryPhone   String
+  deliveryAddress String
+  subtotal        Decimal            @db.Decimal(12, 2)
+  status          OrderStatus        @default(SUBMITTED)
+  items           OrderItem[]
+  statusHistory   OrderStatusEvent[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  paymentMethod   PaymentMethod      @default(COD)
+
+  @@index([userId, createdAt])
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  productId   String
+  productName String
+  unitPrice   Decimal @db.Decimal(10, 2)
+  quantity    Int
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product @relation(fields: [productId], references: [id])
+}
+
+model OrderStatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model ProductImport {
+  id        String   @id @default(cuid())
+  fileName  String
+  created   Int
+  updated   Int
+  failed    Int
+  errors    Json?
+  createdAt DateTime @default(now())
+}

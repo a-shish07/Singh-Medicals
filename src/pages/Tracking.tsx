@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
 
@@ -22,25 +22,69 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
 };
 
 export default function Tracking() {
-  const { orders, navigate } = useApp();
+ const {
+  orders,
+  navigate,
+  selectedOrderId,
+  lookupTrackedOrder,
+  customerPhone,
+} = useApp();
   const [orderId, setOrderId] = useState('');
   const [phone, setPhone] = useState('');
   const [result, setResult] = useState<typeof orders[0] | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  const handleSearch = () => {
-    const found = orders.find(o =>
-      o.id.toLowerCase() === orderId.trim().toLowerCase() &&
-      o.retailerPhone.replace(/\D/g, '').endsWith(phone.trim().replace(/\D/g, '').slice(-10))
-    );
-    if (found) {
-      setResult(found);
-      setNotFound(false);
-    } else {
-      setResult(null);
-      setNotFound(true);
-    }
-  };
+  useEffect(() => {
+  if (!selectedOrderId) return;
+
+  const localOrder = orders.find(
+    (order) => order.id === selectedOrderId
+  );
+
+  if (localOrder) {
+    setResult(localOrder);
+    setOrderId(localOrder.id);
+    setPhone(localOrder.retailerPhone);
+    setNotFound(false);
+    return;
+  }
+
+  if (customerPhone) {
+    lookupTrackedOrder(selectedOrderId, customerPhone).then((order) => {
+      if (order) {
+        setResult(order);
+        setOrderId(order.id);
+        setPhone(order.retailerPhone);
+        setNotFound(false);
+      } else {
+        setResult(null);
+        setNotFound(true);
+      }
+    });
+  }
+}, [
+  selectedOrderId,
+  orders,
+  customerPhone,
+  lookupTrackedOrder,
+]);
+
+ const handleSearch = async () => {
+  if (!orderId.trim() || !phone.trim()) return;
+
+  const found = await lookupTrackedOrder(
+    orderId.trim(),
+    phone.trim()
+  );
+
+  if (found) {
+    setResult(found);
+    setNotFound(false);
+  } else {
+    setResult(null);
+    setNotFound(true);
+  }
+};
 
   const currentStepIndex = result ? STEPS.indexOf(result.status as OrderStatus) : -1;
 
@@ -88,8 +132,8 @@ export default function Tracking() {
         </div>
 
         <p className="text-xs text-[#9CA3AF] mt-3 text-center">
-          Demo: try <span className="font-mono font-semibold">ORD-2024-001</span> with phone <span className="font-mono font-semibold">9876543210</span>
-        </p>
+  Use the phone number registered with your account.
+</p>
       </div>
 
       {notFound && (

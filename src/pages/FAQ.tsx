@@ -112,7 +112,7 @@ const FAQ_DATA: FAQGroup[] = [
   },
 ];
 
-const topicIcons: Record<string, JSX.Element> = {
+const topicIcons: Record<string, React.ReactElement> = {
   Ordering: (
     <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
       <path

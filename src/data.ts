@@ -39,6 +39,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1290,
     status: 'Delivered',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-002',
@@ -53,6 +54,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1524,
     status: 'Dispatched',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-003',
@@ -67,6 +69,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1054,
     status: 'Confirmed',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-004',
@@ -81,6 +84,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1364,
     status: 'Submitted',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-005',
@@ -95,6 +99,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1422,
     status: 'Delivered',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-006',
@@ -108,6 +113,7 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 984,
     status: 'Cancelled',
+    paymentMethod: 'COD',
   },
   {
     id: 'ORD-2024-007',
@@ -123,5 +129,6 @@ export const MOCK_ORDERS: Order[] = [
     ],
     total: 1626,
     status: 'Packed',
+    paymentMethod: 'COD',
   },
 ];
