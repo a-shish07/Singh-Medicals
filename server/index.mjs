@@ -74,6 +74,8 @@ const authenticate = async (req, res, next) => {
   );
 
   if (!token) {
+    console.log('AUTH ERROR: No token received');
+
     return res
       .status(401)
       .json({ error: 'Authentication required.' });
@@ -82,18 +84,29 @@ const authenticate = async (req, res, next) => {
   try {
     const payload = jwt.verify(token, jwtSecret);
 
+    console.log('AUTH JWT OK:', {
+      userId: payload.sub,
+      role: payload.role,
+    });
+
     req.user = await prisma.user.findUnique({
       where: { id: payload.sub },
     });
 
     if (!req.user) {
+      console.log('AUTH ERROR: User not found:', payload.sub);
+
       return res
         .status(401)
         .json({ error: 'Session is no longer valid.' });
     }
 
+    console.log('AUTH USER OK:', req.user.email);
+
     next();
-  } catch {
+  } catch (error) {
+    console.log('AUTH JWT ERROR:', error?.message);
+
     return res
       .status(401)
       .json({ error: 'Invalid or expired session.' });

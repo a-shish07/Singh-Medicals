@@ -202,10 +202,11 @@ function safeRead<T>(key: string): T | null {
 
 function safeWrite(key: string, value: unknown) {
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore storage failures in private browsing or locked-down contexts.
-  }
+    window.localStorage.setItem(
+      key,
+      typeof value === "string" ? value : JSON.stringify(value)
+    );
+  } catch {}
 }
 
 function safeRemove(key: string) {

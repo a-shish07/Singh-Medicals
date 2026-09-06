@@ -23,11 +23,23 @@ async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const data = await createJiti(import.meta.url).import(path.join(root, "src", "data.ts"));
   for (const product of data.PRODUCTS) {
-    const entry = {
-      name: product.name, company: product.company, composition: product.composition,
-      category: product.category, pack: product.pack, mrp: product.mrp, net: product.net,
-      scheme: product.scheme || null, expiry: new Date(`1 ${product.expiry}`), stock: 100, isActive: true,
-    };
+   const entry = {
+  sku: `SKU-${product.name}-${product.company}-${product.pack}`
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toUpperCase(),
+  name: product.name,
+  company: product.company,
+  composition: product.composition,
+  category: product.category,
+  pack: product.pack,
+  mrp: product.mrp,
+  net: product.net,
+  scheme: product.scheme || null,
+  expiry: new Date(`1 ${product.expiry}`),
+  stock: 100,
+  isActive: true,
+};
     await prisma.product.upsert({
       where: { name_company_pack: { name: entry.name, company: entry.company, pack: entry.pack } },
       create: entry, update: entry,
