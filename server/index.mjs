@@ -5,13 +5,15 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
-import {
+import prismaPackage from '@prisma/client';
+
+const {
   PrismaClient,
   Role,
   OrderStatus,
   PaymentMethod,
   DiscountType,
-} from '@prisma/client';
+} = prismaPackage;
 
 const app = express();
 const prisma = new PrismaClient();
