@@ -110,11 +110,7 @@ function ProductCard({ product }: { product: Product }) {
             price={effectivePrice(product)}
           />
 
-          {product.scheme && (
-            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-lg border border-amber-200">
-              🎁 {product.scheme}
-            </span>
-          )}
+          
         </div>
 
         {/* Product name & company */}

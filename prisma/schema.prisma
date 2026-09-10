@@ -84,7 +84,6 @@ model Product {
   freeQuantity   Int?
   bonusProductId String?
   net            Decimal  @db.Decimal(10, 2)
-  scheme         String?
   expiry         DateTime
   stock          Int      @default(0)
   isActive       Boolean  @default(true)

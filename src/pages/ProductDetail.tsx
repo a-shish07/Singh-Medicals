@@ -434,30 +434,7 @@ export default function ProductDetail() {
                   </motion.div>
                 </motion.div>
 
-                {/* Scheme badge */}
-                {product.scheme && (
-                  <motion.div
-                    initial={{
-                      opacity: 0,
-                      scale: 0.7,
-                      y: -10,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      scale: 1,
-                      y: 0,
-                    }}
-                    transition={{
-                      delay: 0.45,
-                      type: "spring",
-                      stiffness: 250,
-                    }}
-                    className="absolute left-5 top-5 flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-xs font-extrabold text-white shadow-[0_6px_20px_rgba(245,158,11,0.25)]"
-                  >
-                    <span>🎁</span>
-                    {product.scheme}
-                  </motion.div>
-                )}
+               
 
                 {/* Genuine badge */}
                 <motion.div
@@ -1211,11 +1188,7 @@ export default function ProductDetail() {
                             <MedicineIcon size="small" />
                           </motion.div>
 
-                          {p.scheme && (
-                            <span className="absolute right-2 top-2 rounded-lg bg-amber-500 px-2 py-1 text-[8px] font-extrabold text-white">
-                              SCHEME
-                            </span>
-                          )}
+                          
                         </div>
 
                         <p className="mb-1 line-clamp-2 text-sm font-extrabold leading-snug text-[#1C1C1E]">

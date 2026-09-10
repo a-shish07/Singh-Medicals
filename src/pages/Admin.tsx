@@ -764,7 +764,7 @@ function ProductsTab() {
 
                 <div className="mt-4 rounded-2xl border border-slate-200 overflow-hidden">
                   <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
-                    <p className="text-xs font-extrabold text-slate-800">Offer / Scheme</p>
+                    <p className="text-xs font-extrabold text-slate-800">Offer</p>
                   </div>
                   <div className="p-4 space-y-3">
                     <label>

@@ -4,13 +4,54 @@ import type { Category, Product } from '../types';
 
 const CATEGORIES: (Category | 'All')[] = ['All', 'Tablets', 'Syrups', 'Injections', 'Eye Drops', 'Topical'];
 
-// Customer-facing wholesale price. Prefer the new automatic Effective PTR;
-// fall back to legacy net for older API records.
-function effectivePrice(product: Product) {
-  const value = (product as Product & { effectivePtr?: number | null }).effectivePtr;
-  return Number.isFinite(Number(value)) ? Number(value) : Number(product.net || 0);
+type ProductPricing = Product & {
+  ptr?: number | null;
+  gst?: number | null;
+  discountType?: string | null;
+  discountValue?: number | null;
+  discountAmount?: number | null;
+  effectivePtr?: number | null;
+  buyQuantity?: number | null;
+  freeQuantity?: number | null;
+  bonusProductId?: string | null;
+};
+
+// Single customer-facing price source.
+// Legacy `net` is used only for older records that do not yet have Effective PTR.
+function effectivePrice(product: ProductPricing) {
+  const value = Number(product.effectivePtr);
+  return Number.isFinite(value) ? value : Number(product.net || 0);
 }
 
+function offerLabel(product: ProductPricing): string | null {
+  const type = product.discountType || 'NONE';
+  const discount = Number(product.discountValue || 0);
+  const buy = Number(product.buyQuantity || 0);
+  const free = Number(product.freeQuantity || 0);
+
+  switch (type) {
+    case 'DISCOUNT_ON_PTR':
+      return discount > 0 ? `${discount}% OFF` : null;
+    case 'SAME_PRODUCT_BONUS':
+      return buy > 0 && free > 0 ? `BUY ${buy} GET ${free} FREE` : null;
+    case 'DIFFERENT_PRODUCT_BONUS':
+      return buy > 0 && free > 0
+        ? `BUY ${buy} GET ${free} FREE`
+        : 'FREE PRODUCT';
+    case 'SAME_PRODUCT_BONUS_AND_DISCOUNT':
+      return buy > 0 && free > 0
+        ? `BUY ${buy} GET ${free} FREE + ${discount}% OFF`
+        : discount > 0 ? `${discount}% OFF` : null;
+    case 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT':
+      return discount > 0
+        ? buy > 0 && free > 0
+          ? `BUY ${buy} GET ${free} FREE + ${discount}% OFF`
+          : `FREE PRODUCT + ${discount}% OFF`
+        : 'FREE PRODUCT';
+    default:
+      return null;
+  }
+}
 
 function GreenBlob({ className }: { className?: string }) {
   return (
@@ -18,16 +59,8 @@ function GreenBlob({ className }: { className?: string }) {
   );
 }
 
-function DiscountBadge({ mrp, price }: { mrp: number; price: number }) {
-  const pct = mrp > 0 ? Math.max(0, Math.round(((mrp - price) / mrp) * 100)) : 0;
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold rounded-lg">
-      {pct}% off
-    </span>
-  );
-}
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({ product }: { product: ProductPricing }) {
   const {
     cartItems,
     addToCart,
@@ -42,9 +75,8 @@ function ProductCard({ product }: { product: Product }) {
 
   const [localQty, setLocalQty] = useState(1);
 
-  const discountPct = effectivePrice(product) < Number(product.mrp)
-    ? Math.max(0, Math.round(((Number(product.mrp) - effectivePrice(product)) / Number(product.mrp)) * 100))
-    : 0;
+  const price = effectivePrice(product);
+  const offer = offerLabel(product);
 
   const handleLocalQtyChange = (
     e: React.ChangeEvent<HTMLInputElement>
@@ -105,14 +137,9 @@ function ProductCard({ product }: { product: Product }) {
             {product.category}
           </span>
 
-          <DiscountBadge
-            mrp={product.mrp}
-            price={effectivePrice(product)}
-          />
-
-          {product.scheme && (
+          {offer && (
             <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-lg border border-amber-200">
-              🎁 {product.scheme}
+              🎁 {offer}
             </span>
           )}
         </div>
@@ -186,7 +213,7 @@ function ProductCard({ product }: { product: Product }) {
                 fontFamily: "'DM Sans', sans-serif",
               }}
             >
-              ₹{effectivePrice(product)}
+              ₹{price.toFixed(2)}
             </p>
           </div>
 
@@ -251,7 +278,7 @@ function ProductCard({ product }: { product: Product }) {
 
                 <span className="text-[11px] text-[#6B7280]">
                   ₹{(
-                    effectivePrice(product) * cartItem.quantity
+                    price * cartItem.quantity
                   ).toLocaleString()} total
                 </span>
               </div>
@@ -461,7 +488,7 @@ export default function Catalogue() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filtered.map(product => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard key={product.id} product={product as ProductPricing} />
             ))}
           </div>
         )}

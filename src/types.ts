@@ -12,7 +12,6 @@ export interface Product {
   pack: string;
   mrp: number;
   net: number;
-  scheme?: string;
   expiry: string;
   stock?: number;
   isActive?: boolean;

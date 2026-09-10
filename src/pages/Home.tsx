@@ -272,11 +272,7 @@ function MiniProductCard({
           </svg>
         </motion.div>
 
-        {product.scheme && (
-          <span className="absolute right-2 top-2 rounded-lg bg-[#0D9A55] px-2 py-1 text-[9px] font-bold text-white shadow-sm">
-            SCHEME
-          </span>
-        )}
+       
       </div>
 
       <p className="mb-0.5 line-clamp-2 text-sm font-bold leading-snug text-[#1C1C1E]">
@@ -387,7 +383,6 @@ export default function Home() {
 
   const featured = PRODUCTS.filter(
     (p) =>
-      p.scheme ||
       (p.mrp - p.net) / p.mrp > 0.25
   ).slice(0, 8);
 

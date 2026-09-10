@@ -80,7 +80,6 @@ function normalizeProduct(product) {
     ...product,
     mrp: Number(product.mrp) || 0,
     net: Number(product.net) || 0,
-    scheme: product.scheme || "",
   };
 }
 

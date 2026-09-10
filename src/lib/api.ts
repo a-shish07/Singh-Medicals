@@ -639,7 +639,6 @@ export async function createAdminProduct(
     // Legacy compatibility
     mrp?: number;
     net?: number;
-    scheme?: string;
     expiry?: string;
     stock?: number;
 
@@ -733,9 +732,8 @@ export async function updateProduct(
           Number(product.freeQuantity) || 0,
 
         // ================================
-        // LEGACY COMPATIBILITY
+        // PRODUCT LIFECYCLE
         // ================================
-        scheme: product.scheme,
         expiry: product.expiry,
         stock: product.stock,
         isActive: product.isActive,

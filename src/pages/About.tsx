@@ -47,7 +47,7 @@ export default function About() {
     {
       icon: "🤝",
       title: "Strong Relationships",
-      desc: "We believe in long-term partnerships. Loyal retailers get priority dispatch, advance notice of scheme offers, and dedicated support.",
+      desc: "We believe in long-term partnerships. Loyal retailers get priority dispatch, advance notice of special offers, and dedicated support.",
     },
   ];
 

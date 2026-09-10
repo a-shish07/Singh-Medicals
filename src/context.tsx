@@ -94,7 +94,6 @@ createProduct: (payload: {
   description?: string;
   mrp?: number;
   net?: number;
-  scheme?: string;
   expiry?: string;
   stock?: number;
   isActive?: boolean;
@@ -832,7 +831,6 @@ const saveCustomerProfile = useCallback(
     description?: string;
     mrp?: number;
     net?: number;
-    scheme?: string;
     expiry?: string;
     stock?: number;
     isActive?: boolean;

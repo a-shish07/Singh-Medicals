@@ -13,16 +13,16 @@ const {
   OrderStatus,
   PaymentMethod,
 } = prismaPackage;
+
 const DiscountType = Object.freeze({
   NONE: 'NONE',
   DISCOUNT_ON_PTR: 'DISCOUNT_ON_PTR',
   SAME_PRODUCT_BONUS: 'SAME_PRODUCT_BONUS',
   DIFFERENT_PRODUCT_BONUS: 'DIFFERENT_PRODUCT_BONUS',
-  SAME_PRODUCT_BONUS_AND_DISCOUNT:
-    'SAME_PRODUCT_BONUS_AND_DISCOUNT',
-  DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT:
-    'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT',
+  SAME_PRODUCT_BONUS_AND_DISCOUNT: 'SAME_PRODUCT_BONUS_AND_DISCOUNT',
+  DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT: 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT',
 });
+
 const app = express();
 const prisma = new PrismaClient();
 
@@ -1102,7 +1102,6 @@ app.post(
         discountValue = 0,
         buyQuantity = 0,
         freeQuantity = 0,
-        scheme,
         expiry,
         stock,
         isActive,
@@ -1173,7 +1172,6 @@ app.post(
           freeQuantity: pricing.freeQuantity,
           net: pricing.effectivePtr,
 
-          scheme: scheme?.trim() || null,
           expiry: parsedExpiry,
           stock: Math.max(0, Number(stock) || 0),
           isActive: isActive !== false,
@@ -1223,7 +1221,6 @@ app.patch(
         discountValue = 0,
         buyQuantity = 0,
         freeQuantity = 0,
-        scheme,
         expiry,
         stock,
         isActive,
@@ -1299,7 +1296,6 @@ app.patch(
           freeQuantity: pricing.freeQuantity,
           net: pricing.effectivePtr,
 
-          scheme: scheme?.trim() || null,
           expiry: parsedExpiry,
           stock: Math.max(0, Number(stock) || 0),
           isActive: isActive !== false,
@@ -2219,7 +2215,6 @@ app.post(
                 buyQuantity: pricing.buyQuantity,
                 freeQuantity: pricing.freeQuantity,
                 net: pricing.effectivePtr,
-                scheme: null,
                 expiry: parsedExpiry,
                 stock: Math.max(0, quantity + (pricing.freeQuantity || 0)),
                 isActive: true,
@@ -2258,7 +2253,6 @@ app.post(
                 buyQuantity: pricing.buyQuantity,
                 freeQuantity: pricing.freeQuantity,
                 net: pricing.effectivePtr,
-                scheme: null,
                 expiry: parsedExpiry,
                 stock: Math.max(0, quantity + (pricing.freeQuantity || 0)),
                 isActive: true,
@@ -2430,8 +2424,6 @@ app.post(
           );
           const image = cleanString(row['Image']) || null;
           const description = cleanString(row['Description']) || null;
-          const scheme = cleanString(row['Scheme']) || null;
-
           // Internal identifiers are generated and never shown/entered in CSV.
           const generatedBatchNumber =
             `AUTO-IMPORT-${index + 1}-${expiryDate.toISOString().slice(0, 10)}`;
@@ -2473,7 +2465,6 @@ app.post(
                   buyQuantity: pricing.buyQuantity,
                   freeQuantity: pricing.freeQuantity,
                   net: pricing.effectivePtr,
-                  scheme,
                   expiry: expiryDate,
                   stock: quantity,
                   isActive: true,
@@ -2503,7 +2494,6 @@ app.post(
                   buyQuantity: pricing.buyQuantity,
                   freeQuantity: pricing.freeQuantity,
                   net: pricing.effectivePtr,
-                  scheme,
                   expiry: expiryDate,
                   isActive: true,
                 },
