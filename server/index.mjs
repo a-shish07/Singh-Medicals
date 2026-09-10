@@ -12,9 +12,17 @@ const {
   Role,
   OrderStatus,
   PaymentMethod,
-  DiscountType,
 } = prismaPackage;
-
+const DiscountType = Object.freeze({
+  NONE: 'NONE',
+  DISCOUNT_ON_PTR: 'DISCOUNT_ON_PTR',
+  SAME_PRODUCT_BONUS: 'SAME_PRODUCT_BONUS',
+  DIFFERENT_PRODUCT_BONUS: 'DIFFERENT_PRODUCT_BONUS',
+  SAME_PRODUCT_BONUS_AND_DISCOUNT:
+    'SAME_PRODUCT_BONUS_AND_DISCOUNT',
+  DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT:
+    'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT',
+});
 const app = express();
 const prisma = new PrismaClient();
 
