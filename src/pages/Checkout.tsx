@@ -1,5 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useApp } from "../context";
+import type { Product } from "../types";
+
+function effectivePrice(product: Product) {
+  const value = (product as Product & { effectivePtr?: number | null }).effectivePtr;
+  return Number.isFinite(Number(value)) ? Number(value) : Number(product.net || 0);
+}
 
 type CheckoutForm = {
   shopName: string;
@@ -10,7 +16,6 @@ type CheckoutForm = {
 export default function Checkout() {
   const {
     cartItems,
-    cartTotal,
     placeOrder,
     navigate,
     isLoggedIn,
@@ -29,6 +34,16 @@ export default function Checkout() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
+
+  const checkoutTotal = useMemo(
+    () =>
+      cartItems.reduce((sum, item) => {
+        const product = products.find((entry) => entry.id === item.productId);
+        if (!product) return sum;
+        return sum + effectivePrice(product) * item.quantity;
+      }, 0),
+    [cartItems, products]
+  );
 
   // Load the customer's latest profile
   useEffect(() => {
@@ -452,7 +467,7 @@ export default function Checkout() {
                 if (!product) return null;
 
                 const lineTotal =
-                  product.net * item.quantity;
+                  effectivePrice(product) * item.quantity;
 
                 return (
                   <div
@@ -486,7 +501,7 @@ export default function Checkout() {
               </span>
 
               <span className="font-semibold">
-                ₹{cartTotal.toLocaleString()}
+                ₹{checkoutTotal.toLocaleString()}
               </span>
             </div>
 
@@ -527,7 +542,7 @@ export default function Checkout() {
                 className="text-2xl font-extrabold text-[#0D9A55]"
                 style={{ fontFamily: "'DM Sans', sans-serif" }}
               >
-                ₹{cartTotal.toLocaleString()}
+                ₹{checkoutTotal.toLocaleString()}
               </span>
             </div>
 

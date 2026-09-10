@@ -24,8 +24,15 @@ barcode?: string;
 prescriptionRequired?: boolean;
 image?: string;
 description?: string;
-
+effectivePtr?: number | null;
 inventoryBatches?: InventoryBatch[];
+ptr?: number | null;
+gst?: number | null;
+discountType?: string;
+discountValue?: number;
+discountAmount?: number;
+buyQuantity?: number | null;
+freeQuantity?: number | null;
 
 inventorySummary?: {
   totalQuantity: number;

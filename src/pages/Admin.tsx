@@ -350,997 +350,709 @@ function OrdersTab() {
 }
 
 function ProductsTab() {
-  const {
-    products,
-    updateProduct,
-    createProduct,
-    addToast,
-  } = useApp();  
-  const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<'name' | 'mrp' | 'net'>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [editing, setEditing] = useState<Product | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [adding, setAdding] = useState(false);
-const [creating, setCreating] = useState(false);
+  const { products, updateProduct, createProduct, addToast } = useApp();
 
-const [newProduct, setNewProduct] = useState({
-  name: '',
-  company: '',
-  composition: '',
-  category: '',
-  medicineType: '',
-  productType: '',
-  pack: '',
-  countryOfOrigin: 'India',
-  sku: '',
-  barcode: '',
-  prescriptionRequired: false,
-  image: '',
-  description: '',
-  mrp: '',
-  net: '',
-  scheme: '',
-  expiry: '',
-  stock: '',
-});
+  type PricingType =
+    | 'NONE'
+    | 'DISCOUNT_ON_PTR'
+    | 'SAME_PRODUCT_BONUS'
+    | 'DIFFERENT_PRODUCT_BONUS'
+    | 'SAME_PRODUCT_BONUS_AND_DISCOUNT'
+    | 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
 
-const handleCreateProduct = async () => {
-  if (
-    !newProduct.name.trim() ||
-    !newProduct.company.trim() ||
-    !newProduct.composition.trim() ||
-    !newProduct.category.trim() ||
-    !newProduct.pack.trim() ||
-    !newProduct.sku.trim() ||
-    !newProduct.expiry
-  ) {
-    addToast(
-      'Please fill all required product fields.',
-      'error'
-    );
-    return;
-  }
-
-  try {
-    setCreating(true);
-
-    await createProduct({
-      name: newProduct.name.trim(),
-      company: newProduct.company.trim(),
-      composition: newProduct.composition.trim(),
-      category: newProduct.category.trim(),
-      medicineType: newProduct.medicineType.trim() || undefined,
-      productType: newProduct.productType.trim() || undefined,
-      pack: newProduct.pack.trim(),
-      countryOfOrigin:
-        newProduct.countryOfOrigin.trim() || undefined,
-      sku: newProduct.sku.trim(),
-      barcode: newProduct.barcode.trim() || undefined,
-      prescriptionRequired:
-        newProduct.prescriptionRequired,
-      image: newProduct.image.trim() || undefined,
-      description:
-        newProduct.description.trim() || undefined,
-      mrp: newProduct.mrp
-        ? Number(newProduct.mrp)
-        : undefined,
-      net: newProduct.net
-        ? Number(newProduct.net)
-        : undefined,
-      scheme: newProduct.scheme.trim() || undefined,
-      expiry: newProduct.expiry || undefined,
-      stock: newProduct.stock
-        ? Number(newProduct.stock)
-        : 0,
-      isActive: true,
-    });
-
-    addToast(
-      'Product created successfully.',
-      'success'
-    );
-
-    setAdding(false);
-
-    setNewProduct({
-      name: '',
-      company: '',
-      composition: '',
-      category: '',
-      medicineType: '',
-      productType: '',
-      pack: '',
-      countryOfOrigin: 'India',
-      sku: '',
-      barcode: '',
-      prescriptionRequired: false,
-      image: '',
-      description: '',
-      mrp: '',
-      net: '',
-      scheme: '',
-      expiry: '',
-      stock: '',
-    });
-  } catch (error) {
-    addToast(
-      error instanceof Error
-        ? error.message
-        : 'Failed to create product.',
-      'error'
-    );
-  } finally {
-    setCreating(false);
-  }
-};
-
-  const toggleSort = (key: typeof sortKey) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
+  type AdminProduct = Product & {
+    ptr?: number | null;
+    gst?: number | null;
+    discountType?: PricingType | null;
+    discountValue?: number | null;
+    discountAmount?: number | null;
+    effectivePtr?: number | null;
+    buyQuantity?: number | null;
+    freeQuantity?: number | null;
+    stock?: number;
+    barcode?: string | null;
   };
 
-  const sorted = [...products]
+  type ProductForm = {
+    name: string;
+    company: string;
+    composition: string;
+    category: string;
+    medicineType: string;
+    productType: string;
+    pack: string;
+    countryOfOrigin: string;
+    barcode: string;
+    prescriptionRequired: boolean;
+    image: string;
+    description: string;
+    mrp: string;
+    discountType: PricingType;
+    discountValue: string;
+    buyQuantity: string;
+    freeQuantity: string;
+    expiry: string;
+    stock: string;
+    isActive: boolean;
+  };
+
+  const emptyForm: ProductForm = {
+    name: '',
+    company: '',
+    composition: '',
+    category: '',
+    medicineType: '',
+    productType: '',
+    pack: '',
+    countryOfOrigin: 'India',
+    barcode: '',
+    prescriptionRequired: false,
+    image: '',
+    description: '',
+    mrp: '',
+    discountType: 'NONE',
+    discountValue: '',
+    buyQuantity: '',
+    freeQuantity: '',
+    expiry: '',
+    stock: '',
+    isActive: true,
+  };
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [offerFilter, setOfferFilter] = useState<'All' | 'Offers' | 'No Offer'>('All');
+  const [sortKey, setSortKey] = useState<'name' | 'mrp' | 'effectivePtr' | 'stock'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedProduct, setSelectedProduct] = useState<AdminProduct | null>(null);
+  const [editing, setEditing] = useState<AdminProduct | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ProductForm>(emptyForm);
+
+  const adminProducts = products as AdminProduct[];
+  const categories = ['All', ...Array.from(new Set(adminProducts.map(p => p.category).filter(Boolean))).sort()];
+
+  const calculatePreview = (source: ProductForm) => {
+    const mrp = Number(source.mrp) || 0;
+    const discount = Math.min(100, Math.max(0, Number(source.discountValue) || 0));
+    const buy = Math.max(0, Math.floor(Number(source.buyQuantity) || 0));
+    const free = Math.max(0, Math.floor(Number(source.freeQuantity) || 0));
+    const ptr = Number((mrp * 0.7619).toFixed(2));
+
+    const sameBonus =
+      source.discountType === 'SAME_PRODUCT_BONUS' ||
+      source.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+
+    const hasDiscount =
+      source.discountType === 'DISCOUNT_ON_PTR' ||
+      source.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' ||
+      source.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
+
+    const bonusAdjustedPtr = sameBonus && buy > 0 && free > 0
+      ? Number((ptr * (buy / (buy + free))).toFixed(2))
+      : ptr;
+
+    const discountAmount = hasDiscount
+      ? Number((bonusAdjustedPtr * (discount / 100)).toFixed(2))
+      : 0;
+
+    const effectivePtr = Math.max(0, Number((bonusAdjustedPtr - discountAmount).toFixed(2)));
+
+    return {
+      ptr,
+      gst: 5,
+      discount,
+      discountAmount,
+      effectivePtr,
+      buy: sameBonus ? buy : 0,
+      free: sameBonus ? free : 0,
+    };
+  };
+
+  const preview = calculatePreview(form);
+
+  const getEffectivePtr = (product: AdminProduct) =>
+    calculatePreview({
+      ...emptyForm,
+      mrp: product.mrp == null ? '' : String(product.mrp),
+      discountType: (product.discountType || 'NONE') as PricingType,
+      discountValue: product.discountValue == null ? '' : String(product.discountValue),
+      buyQuantity: product.buyQuantity == null ? '' : String(product.buyQuantity),
+      freeQuantity: product.freeQuantity == null ? '' : String(product.freeQuantity),
+    }).effectivePtr;
+
+  const openAdd = () => {
+    setForm({ ...emptyForm });
+    setAdding(true);
+  };
+
+  const openEdit = (product: AdminProduct) => {
+    setForm({
+      name: product.name || '',
+      company: product.company || '',
+      composition: product.composition || '',
+      category: product.category || '',
+      medicineType: product.medicineType || '',
+      productType: product.productType || '',
+      pack: product.pack || '',
+      countryOfOrigin: product.countryOfOrigin || 'India',
+      barcode: product.barcode || '',
+      prescriptionRequired: Boolean(product.prescriptionRequired),
+      image: product.image || '',
+      description: product.description || '',
+      mrp: product.mrp == null ? '' : String(product.mrp),
+      discountType: (product.discountType || 'NONE') as PricingType,
+      discountValue: product.discountValue == null ? '' : String(product.discountValue),
+      buyQuantity: product.buyQuantity == null ? '' : String(product.buyQuantity),
+      freeQuantity: product.freeQuantity == null ? '' : String(product.freeQuantity),
+      expiry: product.expiry ? String(product.expiry).slice(0, 10) : '',
+      stock: product.stock == null ? '0' : String(product.stock),
+      isActive: product.isActive !== false,
+    });
+    setEditing(product);
+  };
+
+  const closeForm = () => {
+    setAdding(false);
+    setEditing(null);
+    setSaving(false);
+  };
+
+  const setField = <K extends keyof ProductForm>(key: K, value: ProductForm[K]) => {
+    setForm(current => ({ ...current, [key]: value }));
+  };
+
+  const submitProduct = async () => {
+    if (!form.name.trim() || !form.company.trim() || !form.composition.trim() || !form.category.trim() || !form.pack.trim()) {
+      addToast('Product name, company, composition, category and pack size are required.', 'error');
+      return;
+    }
+
+    if (!form.mrp || Number(form.mrp) < 0) {
+      addToast('Enter a valid MRP.', 'error');
+      return;
+    }
+
+    if (!form.expiry) {
+      addToast('Expiry date is required.', 'error');
+      return;
+    }
+
+    const needsSameBonus =
+      form.discountType === 'SAME_PRODUCT_BONUS' ||
+      form.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+
+    if (needsSameBonus && (!(Number(form.buyQuantity) > 0) || !(Number(form.freeQuantity) > 0))) {
+      addToast('Buy Quantity and Free Quantity are required for a same-product offer.', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        name: form.name.trim(),
+        company: form.company.trim(),
+        composition: form.composition.trim(),
+        category: form.category.trim(),
+        medicineType: form.medicineType.trim() || undefined,
+        productType: form.productType.trim() || undefined,
+        pack: form.pack.trim(),
+        countryOfOrigin: form.countryOfOrigin.trim() || undefined,
+        barcode: form.barcode.trim() || undefined,
+        prescriptionRequired: form.prescriptionRequired,
+        image: form.image.trim() || undefined,
+        description: form.description.trim() || undefined,
+        mrp: Number(form.mrp),
+        discountType: form.discountType,
+        discountValue: Number(form.discountValue) || 0,
+        buyQuantity: Number(form.buyQuantity) || 0,
+        freeQuantity: Number(form.freeQuantity) || 0,
+        expiry: form.expiry,
+        stock: Number(form.stock) || 0,
+        isActive: form.isActive,
+      };
+
+      if (editing) {
+        await (updateProduct as any)(editing.id, payload);
+        addToast('Product updated successfully.', 'success');
+      } else {
+        await (createProduct as any)(payload);
+        addToast('Product added successfully.', 'success');
+      }
+
+      closeForm();
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not save product.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) setSortDir(current => current === 'asc' ? 'desc' : 'asc');
+    else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const hasOffer = (p: AdminProduct) =>
+    p.discountType && p.discountType !== 'NONE';
+
+  const filtered = adminProducts
     .filter(p => {
-      const q = search.toLowerCase();
-      return !q || p.name.toLowerCase().includes(q) || p.company.toLowerCase().includes(q) || p.composition.toLowerCase().includes(q);
+      const q = search.toLowerCase().trim();
+      const matchesSearch = !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.company.toLowerCase().includes(q) ||
+        p.composition.toLowerCase().includes(q);
+      const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
+      const matchesOffer = offerFilter === 'All' ||
+        (offerFilter === 'Offers' ? Boolean(hasOffer(p)) : !hasOffer(p));
+      return matchesSearch && matchesCategory && matchesOffer;
     })
     .sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1;
       if (sortKey === 'name') return a.name.localeCompare(b.name) * dir;
-      return (a[sortKey] - b[sortKey]) * dir;
+      if (sortKey === 'mrp') return (Number(a.mrp) - Number(b.mrp)) * dir;
+      if (sortKey === 'stock') return (Number(a.stock || 0) - Number(b.stock || 0)) * dir;
+      return (getEffectivePtr(a) - getEffectivePtr(b)) * dir;
     });
 
-  const SortIcon = ({ k }: { k: string }) => (
-    <span className="ml-1 opacity-40">
-      {sortKey === k ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
+  const discountLabel = (p: AdminProduct) => {
+    const type = p.discountType || 'NONE';
+    if (type === 'SAME_PRODUCT_BONUS' || type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT') {
+      return `BUY ${p.buyQuantity || 0} GET ${p.freeQuantity || 0}`;
+    }
+    if (type === 'DISCOUNT_ON_PTR' || type === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT') {
+      return `${Number(p.discountValue || 0)}% OFF`;
+    }
+    if (type === 'DIFFERENT_PRODUCT_BONUS') return 'BONUS';
+    return 'No Offer';
+  };
+
+  const price = (value: number | null | undefined) =>
+    `₹${Number(value || 0).toFixed(2)}`;
+
+  const ProductFormModal = () => (
+    <div className="fixed inset-0 z-[100] bg-slate-950/60 p-2 sm:p-5 flex items-center justify-center">
+      <div className="w-full max-w-6xl max-h-[96vh] overflow-hidden rounded-3xl bg-[#F7F9FC] shadow-2xl flex flex-col">
+        <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-4 sm:px-7 py-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] font-extrabold text-[#1266F1]">Inventory Management</p>
+            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">{editing ? 'Edit Medicine' : 'Add Medicine'}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Manage product information, purchase pricing and offers in one place.</p>
+          </div>
+          <button type="button" onClick={closeForm} className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200 flex items-center justify-center">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4 sm:gap-6">
+            <div className="space-y-4">
+              <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">Medicine Details</h3>
+                    <p className="text-xs text-slate-500 mt-1">Basic information shown to pharmacy buyers.</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[10px] font-bold">PRODUCT</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {[
+                    ['name', 'Product Name', 'e.g. Paracetamol 500mg', true],
+                    ['company', 'Company / Manufacturer', 'e.g. GSK', true],
+                    ['composition', 'Composition', 'e.g. Paracetamol 500mg', true],
+                    ['category', 'Category', 'e.g. Tablets', true],
+                    ['medicineType', 'Medicine Type', 'e.g. Allopathic', false],
+                    ['productType', 'Product Type', 'e.g. Tablet', false],
+                    ['pack', 'Pack Size', 'e.g. 10 Tablets', true],
+                    ['countryOfOrigin', 'Country of Origin', 'India', false],
+                  ].map(([key, label, placeholder, required]) => (
+                    <label key={key as string} className={key === 'composition' ? 'sm:col-span-2' : ''}>
+                      <span className="text-xs font-bold text-slate-700">{label as string}{required ? ' *' : ''}</span>
+                      <input
+                        value={form[key as keyof ProductForm] as string}
+                        onChange={e => setField(key as keyof ProductForm, e.target.value as never)}
+                        placeholder={placeholder as string}
+                        className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5">
+                <div className="mb-4">
+                  <h3 className="text-sm font-extrabold text-slate-900">Selling & Stock</h3>
+                  <p className="text-xs text-slate-500 mt-1">Only enter MRP and stock. PTR and effective price are calculated automatically.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <label>
+                    <span className="text-xs font-bold text-slate-700">MRP *</span>
+                    <div className="relative mt-1.5">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                      <input type="number" min="0" step="0.01" value={form.mrp} onChange={e => setField('mrp', e.target.value)} className="w-full rounded-xl border border-slate-200 px-8 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="0.00" />
+                    </div>
+                  </label>
+                  <label>
+                    <span className="text-xs font-bold text-slate-700">Opening Stock</span>
+                    <input type="number" min="0" step="1" value={form.stock} onChange={e => setField('stock', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="0" />
+                  </label>
+                  <label>
+                    <span className="text-xs font-bold text-slate-700">Expiry Date *</span>
+                    <input type="date" value={form.expiry} onChange={e => setField('expiry', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                  </label>
+                </div>
+              </section>
+
+              <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">Medicine Settings</h3>
+                    <p className="text-xs text-slate-500 mt-1">Optional catalogue information.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <label>
+                    <span className="text-xs font-bold text-slate-700">Barcode</span>
+                    <input value={form.barcode} onChange={e => setField('barcode', e.target.value)} placeholder="Optional barcode" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 mt-5 sm:mt-0 cursor-pointer">
+                    <input type="checkbox" checked={form.prescriptionRequired} onChange={e => setField('prescriptionRequired', e.target.checked)} className="h-4 w-4 accent-blue-600" />
+                    <span><span className="block text-xs font-bold text-slate-800">Prescription required</span><span className="block text-[11px] text-slate-500 mt-0.5">Mark this medicine as prescription-only.</span></span>
+                  </label>
+                  <label className="sm:col-span-2">
+                    <span className="text-xs font-bold text-slate-700">Description</span>
+                    <textarea value={form.description} onChange={e => setField('description', e.target.value)} rows={3} placeholder="Optional medicine description" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none resize-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <div className="space-y-4">
+              <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 xl:sticky xl:top-0">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">Purchase Pricing</h3>
+                    <p className="text-xs text-slate-500 mt-1">Medimny-style PTR and offer calculation.</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold">AUTO</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-slate-400">MRP</p>
+                    <p className="mt-1 text-lg font-extrabold text-slate-900">{price(Number(form.mrp) || 0)}</p>
+                  </div>
+                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-blue-500">PTR</p>
+                    <p className="mt-1 text-lg font-extrabold text-blue-700">{price(preview.ptr)}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-slate-400">GST</p>
+                    <p className="mt-1 text-lg font-extrabold text-slate-900">{preview.gst}%</p>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-emerald-600">Effective PTR</p>
+                    <p className="mt-1 text-lg font-extrabold text-emerald-700">{price(preview.effectivePtr)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+                    <p className="text-xs font-extrabold text-slate-800">Offer / Scheme</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <label>
+                      <span className="text-xs font-bold text-slate-700">Offer Type</span>
+                      <select value={form.discountType} onChange={e => setField('discountType', e.target.value as PricingType)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
+                        <option value="NONE">No Offer</option>
+                        <option value="DISCOUNT_ON_PTR">Discount on PTR</option>
+                        <option value="SAME_PRODUCT_BONUS">Buy X Get Y — Same Product</option>
+                        <option value="DIFFERENT_PRODUCT_BONUS">Buy X Get Y — Different Product</option>
+                        <option value="SAME_PRODUCT_BONUS_AND_DISCOUNT">Bonus + Discount — Same Product</option>
+                        <option value="DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT">Bonus + Discount — Different Product</option>
+                      </select>
+                    </label>
+
+                    {(form.discountType === 'DISCOUNT_ON_PTR' || form.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' || form.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT') && (
+                      <label>
+                        <span className="text-xs font-bold text-slate-700">Discount on PTR (%)</span>
+                        <div className="relative mt-1.5">
+                          <input type="number" min="0" max="100" step="0.01" value={form.discountValue} onChange={e => setField('discountValue', e.target.value)} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.75 pr-9 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="0" />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                        </div>
+                      </label>
+                    )}
+
+                    {(form.discountType === 'SAME_PRODUCT_BONUS' || form.discountType === 'DIFFERENT_PRODUCT_BONUS' || form.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' || form.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT') && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <label>
+                          <span className="text-xs font-bold text-slate-700">Buy Quantity</span>
+                          <input type="number" min="1" step="1" value={form.buyQuantity} onChange={e => setField('buyQuantity', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="10" />
+                        </label>
+                        <label>
+                          <span className="text-xs font-bold text-slate-700">Free Quantity</span>
+                          <input type="number" min="1" step="1" value={form.freeQuantity} onChange={e => setField('freeQuantity', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="2" />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-slate-900 text-white p-4">
+                  <div className="flex items-center justify-between text-xs text-slate-300"><span>PTR</span><span>{price(preview.ptr)}</span></div>
+                  <div className="flex items-center justify-between text-xs text-slate-300 mt-2"><span>Discount Amount</span><span>- {price(preview.discountAmount)}</span></div>
+                  <div className="flex items-center justify-between text-sm font-extrabold mt-3 pt-3 border-t border-white/10"><span>Final Effective PTR</span><span className="text-emerald-300">{price(preview.effectivePtr)}</span></div>
+                  {preview.buy > 0 && preview.free > 0 && <p className="mt-3 text-[11px] text-slate-300">Offer: <strong className="text-white">BUY {preview.buy} GET {preview.free} FREE</strong></p>}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border-t border-slate-200 px-4 sm:px-7 py-3.5 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+          <button type="button" onClick={closeForm} className="px-5 py-2.75 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button type="button" disabled={saving} onClick={() => void submitProduct()} className="px-6 py-2.75 rounded-xl bg-[#1266F1] text-white text-sm font-extrabold shadow-sm hover:bg-[#0F56D0] disabled:opacity-60">{saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Product'}</button>
+        </div>
+      </div>
+    </div>
   );
 
-  if (selectedProduct) {
-    const stock = (selectedProduct as Product & { stock?: number }).stock;
-    const discount = selectedProduct.mrp > 0
-      ? Math.round(((selectedProduct.mrp - selectedProduct.net) / selectedProduct.mrp) * 100)
-      : 0;
-
-    return (
-      <div className="space-y-4 sm:space-y-5">
-        <button
-          onClick={() => setSelectedProduct(null)}
-          className="flex items-center gap-2 text-sm text-[#6B7280] hover:text-[#0D9A55] transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-          </svg>
-          Back to Products
-        </button>
-
-        <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-4 sm:p-6">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className="px-2.5 py-1 rounded-lg bg-[#E8F5EE] text-[#0D9A55] text-[10px] font-bold uppercase tracking-wide">Product</span>
-                <span className="px-2.5 py-1 rounded-lg bg-[#F5F7F5] text-[#6B7280] text-[10px] font-bold">{selectedProduct.category}</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-[#1C1C1E] break-words">{selectedProduct.name}</h2>
-              <p className="mt-1 text-sm text-[#6B7280]">{selectedProduct.company}</p>
-              <p className="mt-3 text-sm text-[#374151] leading-6 max-w-3xl">{selectedProduct.composition || 'Composition not added yet.'}</p>
-            </div>
-            <button
-              onClick={() => setEditing(selectedProduct)}
-              className="w-full lg:w-auto px-5 py-2.5 rounded-xl bg-[#0D9A55] text-white text-sm font-bold hover:bg-[#0A7F45] transition-colors"
-            >
-              Edit Product
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-white rounded-2xl p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-            <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">MRP</p>
-            <p className="mt-1 text-lg font-extrabold text-[#1C1C1E]">₹{selectedProduct.mrp}</p>
-          </div>
-          <div className="bg-[#E8F5EE] rounded-2xl p-4">
-            <p className="text-[10px] uppercase tracking-wide text-[#0D9A55]">Net Price</p>
-            <p className="mt-1 text-lg font-extrabold text-[#0D9A55]">₹{selectedProduct.net}</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-            <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Discount</p>
-            <p className="mt-1 text-lg font-extrabold text-[#1C1C1E]">{discount}%</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-            <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Stock</p>
-            <p className={`mt-1 text-lg font-extrabold ${stock !== undefined && stock <= 10 ? 'text-red-600' : 'text-[#1C1C1E]'}`}>
-              {stock === undefined ? '—' : stock}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-          <section className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-4 sm:p-5">
-            <h3 className="font-extrabold text-[#1C1C1E]">Product Information</h3>
-            <div className="mt-4 divide-y divide-black/[0.06]">
-              {[
-                ['Product Name', selectedProduct.name],
-                ['Composition', selectedProduct.composition],
-                ['Company / Manufacturer', selectedProduct.company],
-                ['Category', selectedProduct.category],
-                ['Pack Size', selectedProduct.pack],
-              ].map(([label, value]) => (
-                <div key={label} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-4">
-                  <span className="text-xs font-semibold text-[#9CA3AF]">{label}</span>
-                  <span className="text-sm font-medium text-[#1C1C1E] sm:text-right break-words">{value || 'Not added'}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-4 sm:p-5">
-            <h3 className="font-extrabold text-[#1C1C1E]">Current Inventory Snapshot</h3>
-            <p className="text-xs text-[#9CA3AF] mt-1">Temporary view until batch inventory is connected to the backend.</p>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-xl bg-[#F7F8F7] p-4">
-                <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Available Stock</p>
-                <p className="mt-1 text-xl font-extrabold text-[#1C1C1E]">{stock === undefined ? 'Not available' : `${stock} units`}</p>
-              </div>
-              <div className="rounded-xl bg-[#F7F8F7] p-4">
-                <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Current Expiry</p>
-                <p className="mt-1 text-xl font-extrabold text-[#1C1C1E]">{selectedProduct.expiry || 'Not added'}</p>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <section className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h3 className="font-extrabold text-[#1C1C1E]">Batch Inventory</h3>
-              <p className="text-xs text-[#9CA3AF] mt-1">Each product can have multiple batches with separate stock, pricing and expiry.</p>
-            </div>
-            <span className="w-fit px-3 py-1.5 rounded-lg bg-[#FFF8E8] text-[#795B13] text-[10px] font-bold">Coming with Inventory System</span>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-dashed border-[#D6DDD8] bg-[#F8FAF8] p-6 sm:p-10 text-center">
-            <div className="mx-auto w-11 h-11 rounded-xl bg-white flex items-center justify-center text-[#0D9A55] shadow-sm">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4-8-4V7m16 0l-8 4-8-4m8 4v10" />
-              </svg>
-            </div>
-            <p className="mt-3 text-sm font-bold text-[#1C1C1E]">No batch records connected yet</p>
-            <p className="mt-1 text-xs text-[#6B7280] max-w-md mx-auto leading-5">Batch Number, Quantity, Free Quantity, MRP, PTR, GST, Discount and Expiry will appear here after the inventory backend is implemented.</p>
-          </div>
-        </section>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row gap-2.5 mb-4 sm:mb-5">
-        <div className="relative flex-1 sm:max-w-lg">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-          <input type="text" placeholder="Search product, company or composition..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-10 py-2.5 text-sm bg-white border border-black/[0.08] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30 focus:border-[#0D9A55] transition-all" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg text-[#9CA3AF] hover:bg-[#F5F7F5] hover:text-[#1C1C1E]" aria-label="Clear search">×</button>}
+    <div className="space-y-4 sm:space-y-5">
+      <div className="rounded-2xl bg-gradient-to-r from-[#0E63E8] to-[#2380F7] text-white p-4 sm:p-5 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-blue-100">Inventory</p>
+            <h2 className="text-xl sm:text-2xl font-extrabold mt-1">Medicine Inventory</h2>
+            <p className="text-xs sm:text-sm text-blue-100 mt-1">Manage medicines, wholesale pricing, offers and stock like a professional B2B pharmacy portal.</p>
+          </div>
+          <button onClick={openAdd} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-[#1266F1] px-4 py-2.5 text-sm font-extrabold hover:bg-blue-50 shadow-sm">
+            <Plus className="h-4 w-4" /> Add Product
+          </button>
         </div>
-        <select value={`${sortKey}-${sortDir}`} onChange={e => { const [key, dir] = e.target.value.split('-') as [typeof sortKey, typeof sortDir]; setSortKey(key); setSortDir(dir); }} className="sm:w-44 px-3 py-2.5 text-sm bg-white border border-black/[0.08] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30">
-          <option value="name-asc">Name A–Z</option>
-          <option value="name-desc">Name Z–A</option>
-          <option value="mrp-asc">MRP Low–High</option>
-          <option value="mrp-desc">MRP High–Low</option>
-          <option value="net-asc">Net Low–High</option>
-          <option value="net-desc">Net High–Low</option>
-        </select>
       </div>
-      <button
-  type="button"
-  onClick={() => setAdding(true)}
-  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
->
-  <Plus className="h-4 w-4" />
-  Add Product
-</button>
 
-      {/* Desktop Products Table */}
-      <div className="hidden md:block bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          ['Total Medicines', adminProducts.length, 'catalogue'],
+          ['Active Stock', adminProducts.reduce((s, p) => s + Number(p.stock || 0), 0), 'units'],
+          ['Products on Offer', adminProducts.filter(hasOffer).length, 'offers'],
+          ['Low Stock', adminProducts.filter(p => Number(p.stock || 0) <= 10).length, 'need attention'],
+        ].map(([label, value, note]) => (
+          <div key={label as string} className="bg-white rounded-2xl border border-slate-200 p-4">
+            <p className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label as string}</p>
+            <p className="text-xl font-extrabold text-slate-900 mt-1">{Number(value).toLocaleString('en-IN')}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">{note as string}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4">
+        <div className="flex flex-col xl:flex-row gap-3">
+          <div className="relative flex-1">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search medicine, company or composition…" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.75 text-sm outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none focus:border-blue-500">
+              {categories.map(category => <option key={category}>{category}</option>)}
+            </select>
+            <select value={offerFilter} onChange={e => setOfferFilter(e.target.value as typeof offerFilter)} className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none focus:border-blue-500">
+              <option value="All">All Products</option>
+              <option value="Offers">Offers Only</option>
+              <option value="No Offer">No Offer</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F5F7F5]">
-              <tr className="text-[#6B7280] text-xs uppercase tracking-wide">
-                <th className="text-left px-4 py-3 cursor-pointer hover:text-[#0D9A55] transition-colors" onClick={() => toggleSort('name')}>
-                  Product <SortIcon k="name" />
-                </th>
+          <table className="w-full min-w-[1050px] text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr className="text-[10px] uppercase tracking-wide text-slate-500">
+                <th className="text-left px-4 py-3">Medicine</th>
                 <th className="text-left px-4 py-3">Company</th>
-                <th className="text-left px-4 py-3 hidden lg:table-cell">Category</th>
-                <th className="text-left px-4 py-3 hidden xl:table-cell">Pack</th>
-                <th className="text-right px-4 py-3 cursor-pointer hover:text-[#0D9A55] transition-colors" onClick={() => toggleSort('mrp')}>
-                  MRP <SortIcon k="mrp" />
-                </th>
-                <th className="text-right px-4 py-3 cursor-pointer hover:text-[#0D9A55] transition-colors" onClick={() => toggleSort('net')}>
-                  Net <SortIcon k="net" />
-                </th>
-                <th className="text-right px-4 py-3">Disc%</th>
-                <th className="text-left px-4 py-3 hidden lg:table-cell">Expiry</th>
-                <th className="px-4 py-3" />
+                <th className="text-right px-4 py-3 cursor-pointer" onClick={() => toggleSort('mrp')}>MRP</th>
+                <th className="text-right px-4 py-3">PTR</th>
+                <th className="text-center px-4 py-3">GST</th>
+                <th className="text-center px-4 py-3">Offer</th>
+                <th className="text-right px-4 py-3 cursor-pointer" onClick={() => toggleSort('effectivePtr')}>Effective PTR</th>
+                <th className="text-right px-4 py-3 cursor-pointer" onClick={() => toggleSort('stock')}>Stock</th>
+                <th className="text-right px-4 py-3">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/[0.05]">
-              {sorted.map(p => {
-                const disc = p.mrp > 0 ? Math.round(((p.mrp - p.net) / p.mrp) * 100) : 0;
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map(product => {
+                const effective = getEffectivePtr(product);
+                const offer = discountLabel(product);
                 return (
-                  <tr key={p.id} className="hover:bg-[#F5F7F5]/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <button onClick={() => setSelectedProduct(p)} className="font-semibold text-[#1C1C1E] text-left hover:text-[#0D9A55] transition-colors">{p.name}</button>
-                      <p className="text-xs text-[#9CA3AF] truncate max-w-[220px]">{p.composition}</p>
+                  <tr key={product.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-4 py-3.5">
+                      <button onClick={() => setSelectedProduct(product)} className="text-left">
+                        <p className="font-bold text-slate-900 hover:text-blue-600">{product.name}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{product.composition} · {product.pack}</p>
+                      </button>
                     </td>
-                    <td className="px-4 py-3 text-[#6B7280]">{p.company}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className="px-2 py-0.5 bg-[#F5F7F5] text-[#6B7280] text-xs rounded-lg">{p.category}</span>
-                    </td>
-                    <td className="px-4 py-3 text-[#6B7280] text-xs hidden xl:table-cell">{p.pack}</td>
-                    <td className="px-4 py-3 text-right text-[#6B7280]">₹{p.mrp}</td>
-                    <td className="px-4 py-3 text-right font-bold text-[#0D9A55]">₹{p.net}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="px-2 py-0.5 bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold rounded-lg">{disc}%</span>
-                    </td>
-                    <td className="px-4 py-3 text-[#6B7280] text-xs hidden lg:table-cell">{p.expiry}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-3"><button onClick={() => setSelectedProduct(p)} className="text-[#6B7280] hover:text-[#0D9A55] text-xs font-semibold">View</button><button onClick={() => setEditing(p)} className="text-[#0D9A55] hover:underline text-xs font-semibold">Edit</button></div>
-                    </td>
+                    <td className="px-4 py-3.5 text-slate-600">{product.company}</td>
+                    <td className="px-4 py-3.5 text-right text-slate-600">{price(product.mrp)}</td>
+                    <td className="px-4 py-3.5 text-right font-semibold text-blue-700">{price(product.ptr ?? Number(product.mrp) * 0.7619)}</td>
+                    <td className="px-4 py-3.5 text-center text-slate-600">{Number(product.gst ?? 5)}%</td>
+                    <td className="px-4 py-3.5 text-center"><span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${offer === 'No Offer' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>{offer}</span></td>
+                    <td className="px-4 py-3.5 text-right font-extrabold text-emerald-700">{price(effective)}</td>
+                    <td className="px-4 py-3.5 text-right"><span className={`font-bold ${Number(product.stock || 0) <= 10 ? 'text-red-600' : 'text-slate-700'}`}>{Number(product.stock || 0)}</span></td>
+                    <td className="px-4 py-3.5 text-right"><button onClick={() => openEdit(product)} className="rounded-lg bg-blue-50 text-blue-700 px-3 py-1.5 text-xs font-bold hover:bg-blue-100">Edit</button></td>
                   </tr>
                 );
               })}
-              {sorted.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-[#6B7280] text-sm">No products match your search</td></tr>
-              )}
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 bg-[#F5F7F5] border-t border-black/[0.06] text-xs text-[#6B7280]">
-          Showing {sorted.length} of {products.length} products
-        </div>
+        {filtered.length === 0 && <div className="px-6 py-12 text-center text-sm text-slate-500">No medicines match your search.</div>}
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">Showing {filtered.length} of {adminProducts.length} medicines</div>
       </div>
 
-      {/* Mobile Products Cards */}
       <div className="md:hidden space-y-3">
-        {sorted.map(p => {
-          const disc = p.mrp > 0 ? Math.round(((p.mrp - p.net) / p.mrp) * 100) : 0;
-          const stock = (p as Product & { stock?: number }).stock;
-          return (
-            <div
-              key={p.id}
-              className="bg-white rounded-2xl p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-black/[0.04]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <button onClick={() => setSelectedProduct(p)} className="font-bold text-[15px] leading-5 text-[#1C1C1E] text-left break-words hover:text-[#0D9A55] transition-colors">{p.name}</button>
-                  <p className="text-xs text-[#6B7280] mt-1 break-words">{p.company}</p>
-                </div>
-                <span className="shrink-0 px-2 py-1 bg-[#F5F7F5] text-[#6B7280] text-[10px] font-bold rounded-lg">
-                  {p.category}
-                </span>
+        {filtered.map(product => (
+          <div key={product.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <button onClick={() => setSelectedProduct(product)} className="text-left">
+                  <h3 className="font-extrabold text-slate-900 truncate">{product.name}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{product.company}</p>
+                </button>
               </div>
-
-              <p className="text-xs text-[#9CA3AF] mt-2 leading-4 break-words">{p.composition}</p>
-
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                <div className="rounded-xl bg-[#F7F8F7] p-3">
-                  <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">MRP</p>
-                  <p className="text-sm font-semibold text-[#1C1C1E] mt-1">₹{p.mrp}</p>
-                </div>
-                <div className="rounded-xl bg-[#E8F5EE] p-3">
-                  <p className="text-[10px] uppercase tracking-wide text-[#0D9A55]">Net Price</p>
-                  <p className="text-sm font-extrabold text-[#0D9A55] mt-1">₹{p.net}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 mt-2 py-3 border-y border-black/[0.06]">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Discount</p>
-                  <p className="text-xs font-bold text-[#0D9A55] mt-1">{disc}%</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Pack</p>
-                  <p className="text-xs font-semibold text-[#1C1C1E] mt-1 truncate">{p.pack}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Expiry</p>
-                  <p className="text-xs font-semibold text-[#1C1C1E] mt-1 truncate">{p.expiry}</p>
-                </div>
-              </div>
-
-              {stock !== undefined && (
-                <div className="flex items-center justify-between mt-3 text-xs">
-                  <span className="text-[#6B7280]">Stock</span>
-                  <span className={`font-bold ${stock <= 10 ? 'text-red-600' : 'text-[#1C1C1E]'}`}>
-                    {stock} units
-                  </span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2 mt-3"><button onClick={() => setSelectedProduct(p)} className="py-2.5 rounded-xl bg-[#F5F7F5] text-[#374151] text-xs font-bold hover:bg-[#E8F5EE] hover:text-[#0D9A55] transition-colors">View Details</button><button onClick={() => setEditing(p)} className="py-2.5 rounded-xl bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2] transition-colors">Edit Product</button></div>
+              <span className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-extrabold ${hasOffer(product) ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{discountLabel(product)}</span>
             </div>
-          );
-        })}
-
-        {sorted.length === 0 && (
-          <div className="bg-white rounded-2xl p-10 text-center text-[#6B7280] text-sm shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-            No products match your search
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] text-slate-400 font-bold">MRP</p><p className="font-extrabold text-slate-900 mt-1">{price(product.mrp)}</p></div>
+              <div className="rounded-xl bg-blue-50 p-3"><p className="text-[10px] text-blue-500 font-bold">PTR</p><p className="font-extrabold text-blue-700 mt-1">{price(product.ptr ?? Number(product.mrp) * 0.7619)}</p></div>
+              <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] text-emerald-600 font-bold">EFFECTIVE PTR</p><p className="font-extrabold text-emerald-700 mt-1">{price(getEffectivePtr(product))}</p></div>
+              <div className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] text-slate-400 font-bold">STOCK</p><p className={`font-extrabold mt-1 ${Number(product.stock || 0) <= 10 ? 'text-red-600' : 'text-slate-900'}`}>{Number(product.stock || 0)}</p></div>
+            </div>
+            <button onClick={() => openEdit(product)} className="w-full mt-3 rounded-xl bg-blue-50 text-blue-700 py-2.5 text-xs font-extrabold">Edit Product</button>
           </div>
-        )}
-
-        <div className="px-1 pt-1 text-xs text-[#6B7280] text-center">
-          Showing {sorted.length} of {products.length} products
-        </div>
+        ))}
+        {filtered.length === 0 && <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-sm text-slate-500">No medicines match your search.</div>}
       </div>
 
-      {editing && (() => {
-        const editField = (field: 'name' | 'company' | 'composition' | 'category' | 'pack' | 'mrp' | 'net' | 'scheme' | 'expiry', label: string, type: 'text' | 'number' = 'text', required = true) => (
-          <label className="block text-xs font-bold text-[#374151]">
-            {label}{required && <span className="text-red-500"> *</span>}
-            <input
-              type={type}
-              required={required}
-              min={type === 'number' ? 0 : undefined}
-              step={type === 'number' ? '0.01' : undefined}
-              value={editing[field] ?? ''}
-              onChange={e => setEditing({ ...editing, [field]: type === 'number' ? Number(e.target.value) : e.target.value })}
-              className="mt-1.5 w-full px-3.5 py-2.5 border border-black/[0.10] rounded-xl text-sm font-normal text-[#1C1C1E] bg-white focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/20 focus:border-[#0D9A55]"
-            />
-          </label>
-        );
-
-        return (
-          <div className="fixed inset-0 z-50 bg-black/50 p-3 sm:p-5 flex items-center justify-center">
-            <form
-              onSubmit={async e => {
-                e.preventDefault();
-                setSaving(true);
-                try {
-                  await updateProduct(editing.id, editing);
-                  addToast('Product updated successfully', 'success');
-                  setEditing(null);
-                } catch (error) {
-                  addToast(error instanceof Error ? error.message : 'Could not update product', 'error');
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              className="w-full max-w-3xl max-h-[94vh] overflow-y-auto bg-[#F8FAF8] rounded-2xl shadow-2xl"
-            >
-              <div className="sticky top-0 z-10 bg-white border-b border-black/[0.07] px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-[#0D9A55]">Product Catalogue</p>
-                  <h3 className="text-lg sm:text-xl font-extrabold text-[#1C1C1E] truncate">Edit Product</h3>
-                </div>
-                <button type="button" onClick={() => setEditing(null)} className="w-9 h-9 shrink-0 rounded-xl bg-[#F5F7F5] text-[#6B7280] hover:text-[#1C1C1E] flex items-center justify-center" aria-label="Close">
-                  ×
-                </button>
+      {selectedProduct && (
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 p-3 sm:p-5 flex items-center justify-center" onClick={() => setSelectedProduct(null)}>
+          <div className="w-full max-w-4xl max-h-[94vh] overflow-y-auto rounded-3xl bg-[#F7F9FC] shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-white border-b border-slate-200 p-5 sm:p-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-blue-600">Medicine Details</p>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">{selectedProduct.name}</h2>
+                <p className="text-sm text-slate-500 mt-1">{selectedProduct.company} · {selectedProduct.pack}</p>
               </div>
-
-              <div className="p-4 sm:p-6 space-y-4">
-                <section className="bg-white rounded-2xl border border-black/[0.06] p-4 sm:p-5">
-                  <div className="mb-4">
-                    <h4 className="font-extrabold text-[#1C1C1E]">Basic Information</h4>
-                    <p className="text-xs text-[#9CA3AF] mt-1">Core information that identifies the medicine.</p>
+              <button onClick={() => setSelectedProduct(null)} className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {[
+                  ['MRP', price(selectedProduct.mrp), 'slate'],
+                  ['PTR', price(selectedProduct.ptr ?? Number(selectedProduct.mrp) * 0.7619), 'blue'],
+                  ['GST', `${Number(selectedProduct.gst ?? 5)}%`, 'slate'],
+                  ['Effective PTR', price(getEffectivePtr(selectedProduct)), 'green'],
+                  ['Stock', String(Number(selectedProduct.stock || 0)), 'slate'],
+                ].map(([label, value, tone]) => (
+                  <div key={label as string} className={`rounded-2xl p-4 ${tone === 'blue' ? 'bg-blue-50' : tone === 'green' ? 'bg-emerald-50' : 'bg-white border border-slate-200'}`}>
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label as string}</p>
+                    <p className={`mt-1 text-lg font-extrabold ${tone === 'blue' ? 'text-blue-700' : tone === 'green' ? 'text-emerald-700' : 'text-slate-900'}`}>{value as string}</p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {editField('name', 'Product Name')}
-                    {editField('company', 'Company / Manufacturer')}
-                    <div className="sm:col-span-2">{editField('composition', 'Composition')}</div>
-                    {editField('category', 'Category')}
-                    {editField('pack', 'Pack Size')}
+                ))}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                  <h3 className="font-extrabold text-slate-900">Product Information</h3>
+                  <div className="mt-3 divide-y divide-slate-100">
+                    {[
+                      ['Composition', selectedProduct.composition],
+                      ['Category', selectedProduct.category],
+                      ['Medicine Type', selectedProduct.medicineType],
+                      ['Product Type', selectedProduct.productType],
+                      ['Expiry', selectedProduct.expiry],
+                    ].map(([label, value]) => <div key={label as string} className="py-2.5 flex justify-between gap-4 text-sm"><span className="text-slate-400">{label as string}</span><span className="text-right font-semibold text-slate-800">{value || '—'}</span></div>)}
                   </div>
-                </section>
-
-                <section className="bg-white rounded-2xl border border-black/[0.06] p-4 sm:p-5">
-                  <div className="mb-4">
-                    <h4 className="font-extrabold text-[#1C1C1E]">Pricing</h4>
-                    <p className="text-xs text-[#9CA3AF] mt-1">Current catalogue pricing. Batch-level pricing will be separated later.</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                  <h3 className="font-extrabold text-slate-900">Offer & Pricing</h3>
+                  <div className="mt-3 divide-y divide-slate-100">
+                    <div className="py-2.5 flex justify-between gap-4 text-sm"><span className="text-slate-400">Offer</span><span className="font-extrabold text-emerald-700">{discountLabel(selectedProduct)}</span></div>
+                    <div className="py-2.5 flex justify-between gap-4 text-sm"><span className="text-slate-400">Discount Amount</span><span className="font-semibold text-slate-800">{price(selectedProduct.discountAmount)}</span></div>
+                    <div className="py-2.5 flex justify-between gap-4 text-sm"><span className="text-slate-400">Buy / Free</span><span className="font-semibold text-slate-800">{selectedProduct.buyQuantity || 0} / {selectedProduct.freeQuantity || 0}</span></div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {editField('mrp', 'MRP', 'number')}
-                    {editField('net', 'Net Price', 'number')}
-                    <div className="sm:col-span-2">{editField('scheme', 'Scheme / Offer', 'text', false)}</div>
-                  </div>
-                </section>
-
-                <section className="bg-white rounded-2xl border border-black/[0.06] p-4 sm:p-5">
-                  <div className="mb-4">
-                    <h4 className="font-extrabold text-[#1C1C1E]">Inventory Snapshot</h4>
-                    <p className="text-xs text-[#9CA3AF] mt-1">Temporary catalogue stock fields. Full batch management comes with the inventory system.</p>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <label className="block text-xs font-bold text-[#374151]">
-                      Stock
-                      <input
-                        type="number"
-                        min="0"
-                        value={(editing as Product & { stock?: number }).stock ?? 0}
-                        onChange={e => setEditing({ ...editing, stock: Number(e.target.value) } as Product)}
-                        className="mt-1.5 w-full px-3.5 py-2.5 border border-black/[0.10] rounded-xl text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/20 focus:border-[#0D9A55]"
-                      />
-                    </label>
-                    {editField('expiry', 'Current Expiry')}
-                  </div>
-                </section>
-
-                <div className="rounded-xl bg-[#FFF8E8] border border-[#F3D58A] px-4 py-3 text-xs text-[#795B13]">
-                  <strong>Coming with the inventory upgrade:</strong> SKU, batch number, quantity, free quantity, PTR, GST, discount and multiple batch/expiry records will be managed separately from the Product Master.
                 </div>
               </div>
-
-              <div className="sticky bottom-0 bg-white border-t border-black/[0.07] px-4 sm:px-6 py-4 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
-                <button type="button" onClick={() => setEditing(null)} className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-semibold text-[#6B7280] hover:bg-[#F5F7F5]">Cancel</button>
-                <button disabled={saving} className="w-full sm:w-auto px-5 py-2.5 bg-[#0D9A55] text-white rounded-xl text-sm font-bold disabled:opacity-60 shadow-sm">
-                  {saving ? 'Saving…' : 'Save Product Changes'}
-                </button>
+              <div className="flex justify-end">
+                <button onClick={() => { setSelectedProduct(null); openEdit(selectedProduct); }} className="rounded-xl bg-[#1266F1] text-white px-5 py-2.5 text-sm font-extrabold">Edit Medicine</button>
               </div>
-            </form>
-          </div>
-        );
-      })()}
-    
-  {adding && (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 sm:p-6">
-    <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">
-            Add New Product
-          </h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Create a new product in your medical inventory.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setAdding(false)}
-          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Form */}
-      <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-
-        {/* Basic Information */}
-        <div className="mb-7">
-          <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-            Basic Information
-          </h3>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-            <label className="md:col-span-2">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Product Name *
-              </span>
-              <input
-                value={newProduct.name}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="e.g. Paracetamol 500mg"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Company *
-              </span>
-              <input
-                value={newProduct.company}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    company: e.target.value,
-                  })
-                }
-                placeholder="Manufacturer"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Composition *
-              </span>
-              <input
-                value={newProduct.composition}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    composition: e.target.value,
-                  })
-                }
-                placeholder="e.g. Paracetamol"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Category *
-              </span>
-              <input
-                value={newProduct.category}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    category: e.target.value,
-                  })
-                }
-                placeholder="e.g. Tablets"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Medicine Type
-              </span>
-              <input
-                value={newProduct.medicineType}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    medicineType: e.target.value,
-                  })
-                }
-                placeholder="e.g. Allopathic"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Product Type
-              </span>
-              <input
-                value={newProduct.productType}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    productType: e.target.value,
-                  })
-                }
-                placeholder="e.g. Prescription"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Pack Size *
-              </span>
-              <input
-                value={newProduct.pack}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    pack: e.target.value,
-                  })
-                }
-                placeholder="e.g. 10 Tablets"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Country of Origin
-              </span>
-              <input
-                value={newProduct.countryOfOrigin}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    countryOfOrigin: e.target.value,
-                  })
-                }
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
+            </div>
           </div>
         </div>
-
-        {/* Identification */}
-        <div className="mb-7">
-          <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-            Identification
-          </h3>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                SKU *
-              </span>
-              <input
-                value={newProduct.sku}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    sku: e.target.value,
-                  })
-                }
-                placeholder="e.g. PCM-500-001"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Barcode
-              </span>
-              <input
-                value={newProduct.barcode}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    barcode: e.target.value,
-                  })
-                }
-                placeholder="Optional barcode"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-          </div>
-        </div>
-
-        {/* Pricing */}
-        <div className="mb-7">
-          <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-            Pricing & Inventory
-          </h3>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                MRP
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={newProduct.mrp}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    mrp: e.target.value,
-                  })
-                }
-                placeholder="0.00"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Net Price
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={newProduct.net}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    net: e.target.value,
-                  })
-                }
-                placeholder="0.00"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Opening Stock
-              </span>
-              <input
-                type="number"
-                min="0"
-                value={newProduct.stock}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    stock: e.target.value,
-                  })
-                }
-                placeholder="0"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-          </div>
-        </div>
-
-        {/* Extra */}
-        <div>
-          <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-            Additional Details
-          </h3>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Expiry Date
-              </span>
-              <input
-                type="date"
-                value={newProduct.expiry}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    expiry: e.target.value,
-                  })
-                }
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label>
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Scheme
-              </span>
-              <input
-                value={newProduct.scheme}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    scheme: e.target.value,
-                  })
-                }
-                placeholder="Optional scheme"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="md:col-span-2">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Image URL
-              </span>
-              <input
-                value={newProduct.image}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    image: e.target.value,
-                  })
-                }
-                placeholder="https://..."
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="md:col-span-2">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                Description
-              </span>
-              <textarea
-                rows={4}
-                value={newProduct.description}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    description: e.target.value,
-                  })
-                }
-                placeholder="Product description..."
-                className="w-full resize-none rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-              />
-            </label>
-
-            <label className="flex items-center gap-3 md:col-span-2">
-              <input
-                type="checkbox"
-                checked={newProduct.prescriptionRequired}
-                onChange={(e) =>
-                  setNewProduct({
-                    ...newProduct,
-                    prescriptionRequired: e.target.checked,
-                  })
-                }
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              <span className="text-sm font-medium text-slate-700">
-                Prescription required
-              </span>
-            </label>
-
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-
-        <button
-          type="button"
-          onClick={() => setAdding(false)}
-          disabled={creating}
-          className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-        >
-          Cancel
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCreateProduct}
-          disabled={creating}
-          className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {creating ? 'Creating...' : 'Create Product'}
-        </button>
-
-      </div>
-    </div>
-  </div>
       )}
+
+      {(adding || editing) && <ProductFormModal />}
     </div>
   );
 }
 
 function ImportTab() {
- const { adminToken, addToast, refreshAdminData } = useApp();
+  const { adminToken, addToast, refreshAdminData } = useApp();
 
-const [phase, setPhase] = useState<
-  'idle' | 'dragging' | 'parsing' | 'preview' | 'success'
->('idle');
+  const [phase, setPhase] = useState<'idle' | 'dragging' | 'parsing' | 'preview' | 'success'>('idle');
+  const [parsedRows, setParsedRows] = useState<string[][]>([]);
+  const [selectedFileName, setSelectedFileName] = useState('');
+  const [selectedFileSize, setSelectedFileSize] = useState('');
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
 
-const [parsedRows, setParsedRows] = useState<string[][]>([]);
-const [selectedFileName, setSelectedFileName] = useState('');
-const [selectedFileSize, setSelectedFileSize] = useState('');
-const [parseErrors, setParseErrors] = useState<string[]>([]);
-const [selectedFile, setSelectedFile] = useState<File | null>(null);
-const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-const fileRef = useRef<HTMLInputElement>(null);
-
-  // Inventory CSV format. Composition is included because it belongs to the Product Master.
+  // New inventory CSV: SKU, Batch Number, PTR and GST are generated/calculated by the system.
   const PREVIEW_HEADERS = [
-    'SKU',
     'Product Name',
     'Composition',
-    'Batch Number',
     'Company',
     'Category',
     'Medicine Type',
     'Product Type',
     'Pack Size',
     'Quantity',
-    'Free Quantity',
     'MRP',
-    'PTR',
-    'Discount',
-    'GST',
+    'Discount Type',
+    'Discount %',
+    'Offer Buy Quantity',
+    'Offer Free Quantity',
     'Expiry Date',
+    'Barcode',
+    'Prescription Required',
+    'Country of Origin',
+    'Image',
+    'Description',
   ];
 
   const SAMPLE_ROWS = [
-    ['MED001', 'Augmentin 625 Duo', 'Amoxicillin 500mg + Clavulanic Acid 125mg', 'GSK-A123', 'GSK', 'Antibiotics', 'Tablet', 'Allopathic', '10x6', '100', '10', '250', '190', '10', '12', 'Dec 2027'],
-    ['MED002', 'Paracetamol 500mg', 'Paracetamol 500mg', 'SUN-B456', 'Sun Pharma', 'Analgesics', 'Tablet', 'Allopathic', '10x10', '500', '20', '100', '75', '5', '12', 'Jun 2028'],
-    ['MED003', 'Pantoprazole 40mg', 'Pantoprazole 40mg', 'ABB-C789', 'Abbott', 'Gastro', 'Tablet', 'Allopathic', '10x10', '350', '15', '180', '130', '8', '12', 'Mar 2028'],
+    ['Augmentin 625 Duo', 'Amoxicillin 500mg + Clavulanic Acid 125mg', 'GSK', 'Antibiotics', 'Tablet', 'Allopathic', '10x6', '100', '250', 'DISCOUNT_ON_PTR', '10', '0', '0', '2027-12-31', '', 'false', 'India', '', 'Antibiotic tablets'],
+    ['Paracetamol 500mg', 'Paracetamol 500mg', 'Sun Pharma', 'Analgesics', 'Tablet', 'Allopathic', '10x10', '500', '100', 'NONE', '0', '0', '0', '2028-06-30', '', 'false', 'India', '', 'Paracetamol 500mg tablets'],
+    ['Pantoprazole 40mg', 'Pantoprazole 40mg', 'Abbott', 'Gastro', 'Tablet', 'Allopathic', '10x10', '350', '180', 'SAME_PRODUCT_BONUS_AND_DISCOUNT', '5', '10', '2', '2028-03-31', '', 'false', 'India', '', 'Buy 10 get 2 free'],
   ];
 
-const REQUIRED_INDEXES = [
-  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 15
-];
+  const ALLOWED_DISCOUNT_TYPES = [
+    'NONE',
+    'DISCOUNT_ON_PTR',
+    'SAME_PRODUCT_BONUS',
+    'DIFFERENT_PRODUCT_BONUS',
+    'SAME_PRODUCT_BONUS_AND_DISCOUNT',
+    'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT',
+  ];
+
   const parseCSV = (text: string): string[][] => {
     const rows: string[][] = [];
     let row: string[] = [];
@@ -1404,17 +1116,17 @@ const REQUIRED_INDEXES = [
       const row = indexes.map(index => (sourceRow[index] ?? '').trim());
       const rowErrors: string[] = [];
 
-      REQUIRED_INDEXES.forEach(index => {
+      const requiredIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 13];
+      requiredIndexes.forEach(index => {
         if (!row[index]) rowErrors.push(`${PREVIEW_HEADERS[index]} is required`);
       });
 
       const numericFields = [
-        { index: 9, label: 'Quantity', integer: true },
-        { index: 10, label: 'Free Quantity', integer: true, optional: true },
-        { index: 11, label: 'MRP', integer: false },
-        { index: 12, label: 'PTR', integer: false },
-        { index: 13, label: 'Discount', integer: false, optional: true },
-        { index: 14, label: 'GST', integer: false, optional: true },
+        { index: 7, label: 'Quantity', integer: true },
+        { index: 8, label: 'MRP', integer: false },
+        { index: 10, label: 'Discount %', integer: false, optional: true },
+        { index: 11, label: 'Offer Buy Quantity', integer: true, optional: true },
+        { index: 12, label: 'Offer Free Quantity', integer: true, optional: true },
       ];
 
       numericFields.forEach(field => {
@@ -1427,11 +1139,34 @@ const REQUIRED_INDEXES = [
         }
       });
 
-      const mrp = Number(row[11]);
-      const ptr = Number(row[12]);
-      if (Number.isFinite(mrp) && Number.isFinite(ptr) && ptr > mrp) {
-        rowErrors.push('PTR cannot be greater than MRP');
+      const discount = row[10] ? Number(row[10]) : 0;
+      if (Number.isFinite(discount) && discount > 100) {
+        rowErrors.push('Discount % cannot be greater than 100');
       }
+
+      const discountType = row[9] || 'NONE';
+      if (!ALLOWED_DISCOUNT_TYPES.includes(discountType)) {
+        rowErrors.push(`Discount Type must be one of: ${ALLOWED_DISCOUNT_TYPES.join(', ')}`);
+      }
+
+      const sameProductBonus =
+        discountType === 'SAME_PRODUCT_BONUS' ||
+        discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+
+      const buy = row[11] ? Number(row[11]) : 0;
+      const free = row[12] ? Number(row[12]) : 0;
+      if (sameProductBonus && (buy <= 0 || free <= 0)) {
+        rowErrors.push('Offer Buy Quantity and Offer Free Quantity are required for a same-product offer');
+      }
+
+      const prescription = row[15].toLowerCase();
+      if (prescription && !['true', 'false', 'yes', 'no', '1', '0'].includes(prescription)) {
+        rowErrors.push('Prescription Required must be true/false, yes/no, or 1/0');
+      }
+
+      const expiry = new Date(row[13]);
+      if (Number.isNaN(expiry.valueOf())) rowErrors.push('Expiry Date must be a valid date');
+      else if (expiry < new Date()) rowErrors.push('Expiry Date cannot be in the past');
 
       if (rowErrors.length) errors.push(`Row ${csvRowNumber}: ${rowErrors.join('; ')}`);
       else data.push(row);
@@ -1448,28 +1183,10 @@ const REQUIRED_INDEXES = [
   };
 
   const downloadTemplate = () => {
-    const exampleRow = [
-      'PCM-500-001',
-      'Paracetamol 500mg',
-      'Paracetamol 500mg',
-      'BATCH-001',
-      'Example Pharma',
-      'Analgesics',
-      'Tablet',
-      'Allopathic',
-      '10 Tablets',
-      '100',
-      '0',
-      '100',
-      '80',
-      '5',
-      '12',
-      '2027-12-31',
-    ];
-
+    const escapeCSV = (value: string) => `"${value.replace(/"/g, '""')}"`;
     const csv = [
       PREVIEW_HEADERS.join(','),
-      exampleRow.map(value => `"${value.replace(/"/g, '""')}"`).join(','),
+      SAMPLE_ROWS[0].map(escapeCSV).join(','),
     ].join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1481,13 +1198,13 @@ const REQUIRED_INDEXES = [
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    addToast('Inventory CSV template downloaded', 'success');
+    addToast('New inventory CSV template downloaded', 'success');
   };
 
   const readCSVFile = async (file: File) => {
-  setSelectedFile(file);
-  setSelectedFileName(file.name);
-  setSelectedFileSize(formatFileSize(file.size));
+    setSelectedFile(file);
+    setSelectedFileName(file.name);
+    setSelectedFileSize(formatFileSize(file.size));
     setParseErrors([]);
     setParsedRows([]);
     setPhase('parsing');
@@ -1506,18 +1223,15 @@ const REQUIRED_INDEXES = [
   };
 
   const resetImport = () => {
-  setPhase('idle');
-  setParsedRows([]);
-  setSelectedFileName('');
-  setSelectedFileSize('');
-  setParseErrors([]);
-  setSelectedFile(null);
-  setImporting(false);
-
-  if (fileRef.current) {
-    fileRef.current.value = '';
-  }
-};
+    setPhase('idle');
+    setParsedRows([]);
+    setSelectedFileName('');
+    setSelectedFileSize('');
+    setParseErrors([]);
+    setSelectedFile(null);
+    setImporting(false);
+    if (fileRef.current) fileRef.current.value = '';
+  };
 
   const handleFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -1535,58 +1249,56 @@ const REQUIRED_INDEXES = [
   };
 
   const handleConfirm = async () => {
-  if (!parsedRows.length || parseErrors.length) {
-    return;
-  }
+    if (!parsedRows.length || parseErrors.length) return;
+    if (!selectedFile) {
+      addToast('Please select a CSV file first.', 'error');
+      return;
+    }
+    if (!adminToken) {
+      addToast('Admin session expired. Please login again.', 'error');
+      return;
+    }
 
-  if (!selectedFile) {
-    addToast('Please select a CSV file first.', 'error');
-    return;
-  }
+    try {
+      setImporting(true);
+      const result = await importInventoryCsv(adminToken, selectedFile);
+      await refreshAdminData();
+      addToast(
+        result.message ||
+          `Inventory imported successfully. ${result.imported ?? result.created ?? parsedRows.length} rows processed.`,
+        'success'
+      );
+      setPhase('success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Inventory import failed.', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
 
-  if (!adminToken) {
-    addToast('Admin session expired. Please login again.', 'error');
-    return;
-  }
-
-  try {
-    setImporting(true);
-
-    const result = await importInventoryCsv(
-      adminToken,
-      selectedFile
-    );
-
-    await refreshAdminData();
-
-    addToast(
-      result.message ||
-        `Inventory imported successfully. ${result.imported ?? result.created ?? parsedRows.length} rows processed.`,
-      'success'
-    );
-
-    setPhase('success');
-  } catch (error) {
-    addToast(
-      error instanceof Error
-        ? error.message
-        : 'Inventory import failed.',
-      'error'
-    );
-  } finally {
-    setImporting(false);
-  }
-};
+  const pricingPreview = (row: string[]) => {
+    const mrp = Number(row[8]) || 0;
+    const ptr = Number((mrp * 0.7619).toFixed(2));
+    const discount = Number(row[10]) || 0;
+    const type = row[9] || 'NONE';
+    const buy = Number(row[11]) || 0;
+    const free = Number(row[12]) || 0;
+    const sameBonus = type === 'SAME_PRODUCT_BONUS' || type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+    const bonusPtr = sameBonus && buy > 0 && free > 0 ? Number((ptr * (buy / (buy + free))).toFixed(2)) : ptr;
+    const appliesDiscount = type === 'DISCOUNT_ON_PTR' || type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' || type === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
+    const discountAmount = appliesDiscount ? Number((bonusPtr * discount / 100).toFixed(2)) : 0;
+    return Math.max(0, Number((bonusPtr - discountAmount).toFixed(2)));
+  };
 
   return (
-    <div className="w-full max-w-6xl">
+    <div className="w-full max-w-7xl">
       {phase === 'idle' || phase === 'dragging' ? (
         <div>
           <div className="mb-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-[#1C1C1E]">Import Inventory CSV</h3>
               <p className="text-xs sm:text-sm text-[#6B7280] mt-1 leading-5">
-                Download the template, fill in your product and batch inventory details, then upload the completed CSV. The file is validated in your browser before import.
+                Bulk-add or update medicines. SKU, Batch Number, PTR and GST are handled automatically by the system.
               </p>
             </div>
             <button type="button" onClick={downloadTemplate} className="w-full sm:w-auto shrink-0 px-4 py-2.5 rounded-xl border border-[#0D9A55]/20 bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2] transition-colors">
@@ -1594,61 +1306,43 @@ const REQUIRED_INDEXES = [
             </button>
           </div>
 
+          <div className="mb-4 rounded-2xl border border-[#DDEBE3] bg-[#F8FCF9] p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#4B725F]">
+              <div><span className="font-bold text-[#17683E]">PTR:</span> automatically calculated at 76.19% of MRP</div>
+              <div><span className="font-bold text-[#17683E]">GST:</span> automatically set to 5%</div>
+              <div><span className="font-bold text-[#17683E]">Offers:</span> discount and bonus fields drive Effective PTR</div>
+            </div>
+          </div>
+
           <div
             onDragOver={e => { e.preventDefault(); setPhase('dragging'); }}
             onDragLeave={() => setPhase('idle')}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-6 sm:p-12 min-h-[220px] sm:min-h-[300px] flex flex-col items-center justify-center text-center cursor-pointer transition-all ${phase === 'dragging' ? 'border-[#0D9A55] bg-[#E8F5EE]' : 'border-black/[0.12] hover:border-[#0D9A55] hover:bg-[#F5F7F5]'}`}
+            className={`border-2 border-dashed rounded-2xl p-6 sm:p-12 min-h-[220px] sm:min-h-[280px] flex flex-col items-center justify-center text-center cursor-pointer transition-all ${phase === 'dragging' ? 'border-[#0D9A55] bg-[#E8F5EE]' : 'border-black/[0.12] bg-white hover:border-[#0D9A55]/40 hover:bg-[#FBFDFB]'}`}
           >
-            <div className="w-14 h-14 rounded-2xl bg-[#E8F5EE] flex items-center justify-center mb-4">
-              <svg className="w-7 h-7 text-[#0D9A55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); }} />
+            <div className="w-14 h-14 rounded-2xl bg-[#E8F5EE] text-[#0D9A55] flex items-center justify-center mb-4">
+              <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0-4 4m4-4 4 4M5 13v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4" /></svg>
             </div>
-            <p className="font-bold text-[#1C1C1E] text-sm sm:text-base mb-1">
-              {phase === 'dragging' ? 'Drop to upload inventory' : 'Drag & drop your inventory CSV here'}
-            </p>
-            <p className="text-xs sm:text-sm text-[#6B7280] mb-4">or tap to browse files</p>
-            <span className="px-5 py-2.5 bg-[#0D9A55] text-white text-xs sm:text-sm font-bold rounded-xl shadow-[0_4px_12px_rgba(13,154,85,0.22)]">
-              Choose CSV File
-            </span>
-            <p className="text-[10px] text-[#9CA3AF] mt-4">CSV files only</p>
+            <p className="text-sm sm:text-base font-bold text-[#1C1C1E]">{phase === 'dragging' ? 'Drop to upload inventory' : 'Drag & drop your inventory CSV here'}</p>
+            <p className="text-xs text-[#6B7280] mt-1">or choose a CSV file from your computer</p>
+            <button type="button" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }} className="mt-5 px-5 py-2.5 rounded-xl bg-[#0D9A55] text-white text-xs font-bold hover:bg-[#0A7A43] transition-colors">Choose CSV File</button>
+            <p className="text-[10px] text-[#9CA3AF] mt-4">CSV files only · New format without SKU or Batch Number</p>
           </div>
-
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); }} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-4">
-            <div className="p-4 bg-white rounded-xl border border-black/[0.06]">
-              <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wide text-[#6B7280] mb-2">Required columns</p>
-              <p className="text-xs font-mono text-[#1C1C1E] leading-5 break-words">
-                SKU, Product Name, Composition, Batch Number, Company, Category, Medicine Type, Product Type, Pack Size, Quantity, MRP, PTR, Expiry Date
-              </p>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-black/[0.06]">
-              <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wide text-[#6B7280] mb-2">Optional columns</p>
-              <p className="text-xs font-mono text-[#1C1C1E] leading-5 break-words">Free Quantity, Discount, GST</p>
-            </div>
-          </div>
-</div>
+        </div>
       ) : phase === 'parsing' ? (
-        <div className="bg-white rounded-2xl p-8 sm:p-16 text-center shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-          <svg className="w-10 h-10 text-[#0D9A55] animate-spin mx-auto" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-          </svg>
+        <div className="bg-white rounded-2xl p-10 sm:p-16 text-center shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
+          <div className="w-14 h-14 rounded-full border-4 border-[#E8F5EE] border-t-[#0D9A55] animate-spin mx-auto" />
           <p className="text-sm text-[#1C1C1E] font-bold mt-4">Reading inventory CSV…</p>
-          <p className="text-xs text-[#6B7280] mt-1 break-all">{selectedFileName}</p>
-          <p className="text-xs text-[#9CA3AF] mt-3">Parsing and validating the actual file</p>
+          <p className="text-xs text-[#6B7280] mt-1">Validating product fields and pricing configuration.</p>
         </div>
       ) : phase === 'preview' ? (
         <div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="mb-4 rounded-2xl bg-white p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-black/[0.04] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="font-extrabold text-[#1C1C1E] text-base sm:text-lg">Inventory Preview</h3>
-              <p className="text-xs sm:text-sm text-[#6B7280] mt-1 break-words">
-                {selectedFileName || 'CSV file'} · {selectedFileSize} · {parsedRows.length} valid row{parsedRows.length === 1 ? '' : 's'}
-              </p>
+              <p className="text-sm font-extrabold text-[#1C1C1E] truncate">{selectedFileName || 'CSV file'}</p>
+              <p className="text-xs text-[#6B7280] mt-1">{selectedFileSize} · {parsedRows.length} valid row{parsedRows.length === 1 ? '' : 's'}</p>
             </div>
             <button onClick={resetImport} className="self-start sm:self-auto text-sm text-[#6B7280] hover:text-[#1C1C1E] font-semibold">Choose another file</button>
           </div>
@@ -1660,9 +1354,7 @@ const REQUIRED_INDEXES = [
                 <div className="min-w-0">
                   <p className="text-sm font-extrabold text-red-800">Inventory CSV validation failed</p>
                   <p className="text-xs text-red-700 mt-1">Fix the following issue{parseErrors.length === 1 ? '' : 's'} and upload the file again.</p>
-                  <ul className="mt-3 space-y-1.5 list-disc pl-4 text-xs text-red-700">
-                    {parseErrors.slice(0, 20).map((error, index) => <li key={`${error}-${index}`}>{error}</li>)}
-                  </ul>
+                  <ul className="mt-3 space-y-1.5 list-disc pl-4 text-xs text-red-700">{parseErrors.slice(0, 20).map((error, index) => <li key={`${error}-${index}`}>{error}</li>)}</ul>
                   {parseErrors.length > 20 && <p className="text-xs text-red-700 mt-2">+ {parseErrors.length - 20} more issue(s)</p>}
                 </div>
               </div>
@@ -1679,70 +1371,56 @@ const REQUIRED_INDEXES = [
             </div>
           )}
 
-          {parsedRows.length > 0 && <div className="hidden md:block bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden mb-4">
+          {parsedRows.length > 0 && <div className="hidden xl:block bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden mb-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-[#F5F7F5]">
-                  <tr>
-                    <th className="text-left px-3 py-2.5 text-xs font-semibold text-[#6B7280] uppercase tracking-wide">#</th>
-                    {PREVIEW_HEADERS.map(h => <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold text-[#6B7280] uppercase tracking-wide whitespace-nowrap">{h}</th>)}
-                  </tr>
-                </thead>
+                <thead className="bg-[#F5F7F5]"><tr>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-[#6B7280] uppercase tracking-wide">#</th>
+                  {PREVIEW_HEADERS.map(h => <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold text-[#6B7280] uppercase tracking-wide whitespace-nowrap">{h}</th>)}
+                  <th className="text-right px-3 py-2.5 text-xs font-semibold text-[#6B7280] uppercase tracking-wide">Effective PTR</th>
+                </tr></thead>
                 <tbody className="divide-y divide-black/[0.05]">
-                  {parsedRows.map((row, i) => (
-                    <tr key={i} className="hover:bg-[#F5F7F5]/50">
-                      <td className="px-3 py-2.5 text-xs text-[#9CA3AF]">{i + 1}</td>
-                      {PREVIEW_HEADERS.map((_, j) => <td key={j} className="px-3 py-2.5 text-[#1C1C1E] text-xs whitespace-nowrap">{row[j] || '—'}</td>)}
-                    </tr>
-                  ))}
+                  {parsedRows.map((row, i) => <tr key={i} className="hover:bg-[#F5F7F5]/50">
+                    <td className="px-3 py-2.5 text-xs text-[#9CA3AF]">{i + 1}</td>
+                    {row.map((value, j) => <td key={j} className="px-3 py-2.5 text-[#1C1C1E] text-xs whitespace-nowrap">{value || '—'}</td>)}
+                    <td className="px-3 py-2.5 text-right text-[#0D9A55] font-extrabold text-xs whitespace-nowrap">₹{pricingPreview(row).toFixed(2)}</td>
+                  </tr>)}
                 </tbody>
               </table>
             </div>
           </div>}
 
-          {parsedRows.length > 0 && <div className="md:hidden space-y-3 mb-4">
+          <div className="xl:hidden space-y-3 mb-4">
             {parsedRows.map((row, i) => (
               <div key={i} className="bg-white rounded-2xl p-4 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-black/[0.04]">
                 <div className="flex items-start justify-between gap-3 pb-3 border-b border-black/[0.06]">
-                  <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Inventory {i + 1}</p>
-                    <p className="font-bold text-sm text-[#1C1C1E] mt-1 break-words">{row[1] || 'Unnamed product'}</p>
-                    <p className="text-xs text-[#6B7280] mt-1 break-words">{row[0]} · {row[4]}</p>
-                  </div>
-                  <span className="shrink-0 px-2 py-1 bg-[#F5F7F5] rounded-lg text-[10px] font-bold text-[#6B7280]">{row[5] || '—'}</span>
+                  <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Inventory {i + 1}</p><p className="font-bold text-sm text-[#1C1C1E] mt-1 break-words">{row[0] || 'Unnamed product'}</p><p className="text-xs text-[#6B7280] mt-1 break-words">{row[2]} · {row[3]}</p></div>
+                  <span className="shrink-0 px-2 py-1 bg-[#E8F5EE] rounded-lg text-[10px] font-bold text-[#0D9A55]">Effective ₹{pricingPreview(row).toFixed(2)}</span>
                 </div>
-                <p className="text-xs text-[#6B7280] mt-3"><strong className="text-[#1C1C1E]">Composition:</strong> {row[2] || '—'}</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3 mt-3 border-t border-black/[0.06]">
-                  {[['Batch', row[3]], ['Pack', row[8]], ['Quantity', row[9]], ['Free', row[10]], ['MRP', `₹${row[11]}`], ['PTR', `₹${row[12]}`], ['Discount', row[13] ? `${row[13]}%` : '—'], ['GST', row[14] ? `${row[14]}%` : '—'], ['Expiry', row[15]]].map(([label, value]) => (
-                    <div key={label}>
-                      <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">{label}</p>
-                      <p className="text-xs font-semibold text-[#1C1C1E] mt-1 break-words">{value || '—'}</p>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3">
+                  {[
+                    ['Composition', row[1]], ['Pack', row[6]], ['Quantity', row[7]], ['MRP', `₹${row[8]}`],
+                    ['PTR', `₹${(Number(row[8] || 0) * 0.7619).toFixed(2)}`], ['Discount', row[10] ? `${row[10]}%` : '0%'],
+                    ['Offer', row[9] || 'NONE'], ['Expiry', row[13]], ['Barcode', row[14] || 'Auto / optional'], ['GST', '5%']
+                  ].map(([label, value]) => <div key={label}><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">{label}</p><p className="text-xs font-semibold text-[#1C1C1E] mt-1 break-words">{value || '—'}</p></div>)}
                 </div>
               </div>
             ))}
-          </div>}
+          </div>
 
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <button onClick={() => { void handleConfirm(); }} disabled={importing || !parsedRows.length || parseErrors.length > 0} className="w-full sm:w-auto px-6 py-3 bg-[#0D9A55] text-white rounded-2xl font-bold hover:bg-[#0A7A43] transition-colors shadow-[0_4px_16px_rgba(13,154,85,0.3)] text-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none">
-              {importing
-  ? 'Importing…'
-  : parseErrors.length > 0
-    ? 'Fix CSV Errors First'
-    : `Import ${parsedRows.length} Inventory Row${parsedRows.length === 1 ? '' : 's'} →`}
+              {importing ? 'Importing…' : parseErrors.length > 0 ? 'Fix CSV Errors First' : `Import ${parsedRows.length} Inventory Row${parsedRows.length === 1 ? '' : 's'} →`}
             </button>
             <button onClick={resetImport} className="w-full sm:w-auto px-6 py-3 border border-black/[0.08] text-[#6B7280] rounded-2xl font-semibold text-sm hover:bg-[#F5F7F5]">Cancel</button>
           </div>
         </div>
       ) : (
         <div className="bg-white rounded-2xl p-8 sm:p-16 text-center shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
-          <div className="w-16 h-16 rounded-full bg-[#E8F5EE] flex items-center justify-center mx-auto mb-4">
-            <svg className="w-9 h-9 text-[#0D9A55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          </div>
-          <h3 className="text-xl font-extrabold text-[#1C1C1E] mb-2">Inventory CSV validated!</h3>
-          <p className="text-[#6B7280] text-sm mb-6">The file structure and inventory rows passed the browser validation.</p>
-          <button onClick={resetImport} className="w-full sm:w-auto px-5 py-2.5 border-2 border-[#0D9A55] text-[#0D9A55] rounded-xl font-semibold text-sm hover:bg-[#E8F5EE] transition-colors">Validate Another File</button>
+          <div className="w-16 h-16 rounded-full bg-[#E8F5EE] flex items-center justify-center mx-auto mb-4"><svg className="w-9 h-9 text-[#0D9A55]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
+          <h3 className="text-xl font-extrabold text-[#1C1C1E] mb-2">Inventory imported successfully!</h3>
+          <p className="text-[#6B7280] text-sm mb-6">Products, stock and automatic pricing were saved and the Admin inventory has been refreshed.</p>
+          <button onClick={resetImport} className="w-full sm:w-auto px-5 py-2.5 border-2 border-[#0D9A55] text-[#0D9A55] rounded-xl font-semibold text-sm hover:bg-[#E8F5EE] transition-colors">Import Another CSV</button>
         </div>
       )}
     </div>
@@ -1991,7 +1669,7 @@ function CustomersTab() {
 }
 
 export default function Admin() {
-  const { navigate, adminTab, setAdminTab, isAdminLoggedIn, logoutAdmin, refreshAdminData, refreshCustomers, products, customers } = useApp();
+  const { navigate, adminTab, setAdminTab, isAdminLoggedIn, refreshAdminData, refreshCustomers, products, customers } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   useEffect(() => { if (isAdminLoggedIn) { refreshAdminData().catch(() => undefined); refreshCustomers().catch(() => undefined); } }, [isAdminLoggedIn, refreshAdminData, refreshCustomers]);
 
@@ -2090,58 +1768,15 @@ export default function Admin() {
           ))}
         </nav>
 
-       <div className="px-3 py-4 border-t border-white/10 space-y-1">
-
-  {/* Logout */}
-  <button
-    type="button"
-    onClick={() => {
-      logoutAdmin();
-      setMobileMenuOpen(false);
-    }}
-    className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all w-full"
-  >
-    <svg
-      className="w-4 h-4"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h9.75"
-      />
-    </svg>
-
-    Logout
-  </button>
-
-  {/* Back to Store */}
-  <button
-    type="button"
-    onClick={() => navigate('catalogue')}
-    className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/50 hover:text-white hover:bg-white/10 transition-all w-full"
-  >
-    <svg
-      className="w-4 h-4"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00-.75.75v3.75c0 .415.336.75.75.75z"
-      />
-    </svg>
-
-    Back to Store
-  </button>
-
-</div>
+        <div className="px-3 py-4 border-t border-white/10">
+          <button
+            onClick={() => navigate('catalogue')}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-white/50 hover:text-white hover:bg-white/10 transition-all w-full"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .415.336.75.75.75z" /></svg>
+            Back to Store
+          </button>
+        </div>
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -2206,61 +1841,17 @@ export default function Admin() {
           ))}
         </nav>
 
-       <div className="px-3 py-4 border-t border-white/10 space-y-1">
-
-  {/* Logout */}
-  <button
-    type="button"
-    onClick={() => {
-      logoutAdmin();
-      setMobileMenuOpen(false);
-    }}
-    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all w-full"
-  >
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h9.75"
-      />
-    </svg>
-
-    Logout
-  </button>
-
-  {/* Back to Store */}
-  <button
-    type="button"
-    onClick={() => {
-      navigate('catalogue');
-      setMobileMenuOpen(false);
-    }}
-    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-white/50 hover:text-white hover:bg-white/10 transition-all w-full"
-  >
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 00-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 00-.621 4.72"
-      />
-    </svg>
-
-    Back to Store
-  </button>
-
-</div>
+        <div className="px-3 py-4 border-t border-white/10">
+          <button
+            onClick={() => navigate('catalogue')}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-white/50 hover:text-white hover:bg-white/10 transition-all w-full"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .415.336.75.75.75z" />
+            </svg>
+            Back to Store
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}
@@ -2294,7 +1885,7 @@ export default function Admin() {
                 {adminTab === 'orders' && 'Review, manage and update customer orders'}
                 {adminTab === 'products' && 'Manage medicines, compositions, pricing and catalogue information'}
                 {adminTab === 'customers' && 'View registered customers and their complete order history'}
-                {adminTab === 'import' && 'Bulk import medicine inventory by SKU and batch via CSV upload'}
+                {adminTab === 'import' && 'Bulk import medicines with automatic PTR, GST, offers and Effective PTR'}
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-[#6B7280] bg-white border border-black/[0.06] rounded-xl px-3 py-2 w-fit shadow-sm">

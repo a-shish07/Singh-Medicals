@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../context";
 import { loginWithEmail, registerWithEmail } from "../lib/api";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const {
@@ -20,6 +21,8 @@ export default function Login() {
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -233,48 +236,80 @@ export default function Login() {
             </label>
           )}
 
-          {/* Password */}
-          <label className="block text-sm font-semibold">
-            Password
+         {/* Password */}
+<label className="block text-sm font-semibold">
+  Password
 
-            <input
-              required
-              type="password"
-              minLength={8}
-              autoComplete={
-                mode === "login"
-                  ? "current-password"
-                  : "new-password"
-              }
-              value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
-              placeholder="At least 8 characters"
-              className="mt-1.5 w-full px-4 py-3 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
-            />
-          </label>
+  <div className="relative mt-1.5">
+    <input
+      required
+      type={showPassword ? "text" : "password"}
+      minLength={8}
+      autoComplete={
+        mode === "login"
+          ? "current-password"
+          : "new-password"
+      }
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+      placeholder="At least 8 characters"
+      className="w-full px-4 py-3 pr-12 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
+    />
 
-          {/* Confirm Password */}
-          {mode === "register" && (
-            <label className="block text-sm font-semibold">
-              Confirm password
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#0D9A55] transition-colors"
+      aria-label={showPassword ? "Hide password" : "Show password"}
+    >
+      {showPassword ? (
+        <EyeOff size={20} />
+      ) : (
+        <Eye size={20} />
+      )}
+    </button>
+  </div>
+</label>
 
-              <input
-                required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) =>
-                  setConfirmPassword(
-                    e.target.value
-                  )
-                }
-                className="mt-1.5 w-full px-4 py-3 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
-              />
-            </label>
-          )}
+{/* Confirm Password */}
+{mode === "register" && (
+  <label className="block text-sm font-semibold">
+    Confirm password
+
+    <div className="relative mt-1.5">
+      <input
+        required
+        type={showConfirmPassword ? "text" : "password"}
+        minLength={8}
+        autoComplete="new-password"
+        value={confirmPassword}
+        onChange={(e) =>
+          setConfirmPassword(e.target.value)
+        }
+        className="w-full px-4 py-3 pr-12 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
+      />
+
+      <button
+        type="button"
+        onClick={() =>
+          setShowConfirmPassword(!showConfirmPassword)
+        }
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#0D9A55] transition-colors"
+        aria-label={
+          showConfirmPassword
+            ? "Hide confirm password"
+            : "Show confirm password"
+        }
+      >
+        {showConfirmPassword ? (
+          <EyeOff size={20} />
+        ) : (
+          <Eye size={20} />
+        )}
+      </button>
+    </div>
+  </label>
+)}
 
           {/* Error */}
           {error && (

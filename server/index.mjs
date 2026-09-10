@@ -10,6 +10,7 @@ import {
   Role,
   OrderStatus,
   PaymentMethod,
+  DiscountType,
 } from '@prisma/client';
 
 const app = express();
@@ -22,20 +23,216 @@ const upload = multer({
 
 const port = Number(process.env.PORT || 3001);
 const jwtSecret = process.env.JWT_SECRET;
+const isProduction = process.env.NODE_ENV === 'production';
 
-if (!jwtSecret) {
+if (!jwtSecret || jwtSecret.length < 32) {
   throw new Error(
-    'JWT_SECRET is required. Copy .env.example to .env and set it.'
+    'JWT_SECRET is required and should be at least 32 characters long.'
   );
 }
 
+const PTR_FACTOR = 0.7619;
+const DEFAULT_GST = 5;
+
+function calculateProductPricing({
+  mrp,
+  discountType = DiscountType.NONE,
+  discountValue = 0,
+  buyQuantity = 0,
+  freeQuantity = 0,
+}) {
+  const parsedMrp = Number(mrp);
+  const parsedDiscount = Number(discountValue) || 0;
+  const parsedBuy = Number(buyQuantity) || 0;
+  const parsedFree = Number(freeQuantity) || 0;
+
+  if (!Number.isFinite(parsedMrp) || parsedMrp < 0) {
+    throw new Error('MRP must be a valid non-negative number.');
+  }
+
+  if (
+    !Number.isFinite(parsedDiscount) ||
+    parsedDiscount < 0 ||
+    parsedDiscount > 100
+  ) {
+    throw new Error('Discount must be between 0 and 100%.');
+  }
+
+  const ptr = Number((parsedMrp * PTR_FACTOR).toFixed(2));
+
+  let bonusAdjustedPtr = ptr;
+
+  const usesSameProductBonus =
+    discountType === DiscountType.SAME_PRODUCT_BONUS ||
+    discountType ===
+      DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT;
+
+  const usesDiscount =
+    discountType === DiscountType.DISCOUNT_ON_PTR ||
+    discountType ===
+      DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT ||
+    discountType ===
+      DiscountType.DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT;
+
+  if (usesSameProductBonus) {
+    if (parsedBuy <= 0 || parsedFree <= 0) {
+      throw new Error(
+        'Buy quantity and free quantity are required for a same-product bonus.'
+      );
+    }
+
+    bonusAdjustedPtr =
+      ptr *
+      (parsedBuy / (parsedBuy + parsedFree));
+  }
+
+  const roundedBonusAdjustedPtr = Number(
+  bonusAdjustedPtr.toFixed(2)
+);
+
+const discountAmount = usesDiscount
+  ? Number(
+      (roundedBonusAdjustedPtr * (parsedDiscount / 100)).toFixed(2)
+    )
+  : 0;
+
+const effectivePtr = Math.max(
+  0,
+  Number(
+    (roundedBonusAdjustedPtr - discountAmount).toFixed(2)
+  )
+);
+
+  return {
+    mrp: Number(parsedMrp.toFixed(2)),
+    ptr,
+    gst: DEFAULT_GST,
+    discountType,
+    discountValue: Number(parsedDiscount.toFixed(2)),
+    discountAmount: Number(discountAmount.toFixed(2)),
+    effectivePtr,
+    buyQuantity: usesSameProductBonus
+      ? Math.max(0, Math.floor(parsedBuy))
+      : null,
+    freeQuantity: usesSameProductBonus
+      ? Math.max(0, Math.floor(parsedFree))
+      : null,
+  };
+}
+
+app.disable('x-powered-by');
+app.set('trust proxy', isProduction ? 1 : false);
+
+const allowedOrigins = String(
+  process.env.CORS_ORIGIN || 'http://localhost:8443'
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:8443',
+    origin(origin, callback) {
+      // Allow server-to-server requests and local tools with no Origin header.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error('CORS origin not allowed.')
+      );
+    },
   })
 );
 
-app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()'
+  );
+
+  if (isProduction) {
+    res.setHeader(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains'
+    );
+  }
+
+  next();
+});
+
+app.use(express.json({ limit: '10mb' }));
+
+// Lightweight in-memory rate limiter for authentication endpoints.
+// This is intentionally dependency-free. For multi-instance production
+// deployments, move this to Redis or another shared rate-limit store.
+const authRateLimitStore = new Map();
+
+function authRateLimit({
+  windowMs = 15 * 60 * 1000,
+  max = 15,
+} = {}) {
+  return (req, res, next) => {
+    const key = String(
+      req.ip ||
+        req.headers['x-forwarded-for'] ||
+        req.socket.remoteAddress ||
+        'unknown'
+    );
+
+    const now = Date.now();
+    const existing = authRateLimitStore.get(key);
+
+    if (!existing || now - existing.startedAt >= windowMs) {
+      authRateLimitStore.set(key, {
+        startedAt: now,
+        count: 1,
+      });
+
+      return next();
+    }
+
+    existing.count += 1;
+
+    if (existing.count > max) {
+      const retryAfter = Math.max(
+        1,
+        Math.ceil(
+          (windowMs - (now - existing.startedAt)) / 1000
+        )
+      );
+
+      res.setHeader('Retry-After', String(retryAfter));
+
+      return res.status(429).json({
+        error:
+          'Too many authentication attempts. Please try again later.',
+      });
+    }
+
+    next();
+  };
+}
+
+// Prevent unbounded growth of the in-memory limiter map.
+const rateLimitCleanup = setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+
+  for (const [key, entry] of authRateLimitStore.entries()) {
+    if (entry.startedAt < cutoff) {
+      authRateLimitStore.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+rateLimitCleanup.unref?.();
 
 /* ============================================================================
    HELPERS
@@ -214,7 +411,10 @@ app.get('/api/bootstrap', async (_req, res, next) => {
    AUTH
 ============================================================================ */
 
-app.post('/api/auth/register', async (req, res, next) => {
+app.post(
+  '/api/auth/register',
+  authRateLimit({ max: 10 }),
+  async (req, res, next) => {
   try {
     const {
       name,
@@ -263,7 +463,10 @@ app.post('/api/auth/register', async (req, res, next) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res, next) => {
+app.post(
+  '/api/auth/login',
+  authRateLimit({ max: 15 }),
+  async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -553,13 +756,22 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
       }
     }
 
+    // Snapshot the customer's actual selling price at order time.
+    // Prefer Effective PTR and fall back to legacy net for older records.
+    const effectivePrice = (product) => {
+      const value = product.effectivePtr;
+      return Number.isFinite(Number(value))
+        ? Number(value)
+        : Number(product.net || 0);
+    };
+
     const total = normalizedItems.reduce(
       (sum, item) => {
         const product = byId.get(item.productId);
 
         return (
           sum +
-          Number(product.net) *
+          effectivePrice(product) *
             item.quantity
         );
       },
@@ -610,8 +822,10 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
                           product.id,
                         productName:
                           product.name,
+                        // Store a historical price snapshot.
+                        // Future product-price changes must not alter this order.
                         unitPrice:
-                          product.net,
+                          effectivePrice(product),
                         quantity:
                           item.quantity,
                       };
@@ -635,11 +849,16 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
             },
           });
 
-        // Keep legacy Product.stock synchronized.
+        // Deduct stock atomically inside the same transaction.
+        // The stock check is repeated at the database update level so
+        // concurrent orders cannot drive Product.stock below zero.
         for (const item of normalizedItems) {
-          await tx.product.update({
+          const updated = await tx.product.updateMany({
             where: {
               id: item.productId,
+              stock: {
+                gte: item.quantity,
+              },
             },
             data: {
               stock: {
@@ -647,9 +866,29 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
               },
             },
           });
+
+          if (updated.count !== 1) {
+            throw new Error(
+              `Insufficient stock for ${byId.get(item.productId).name}.`
+            );
+          }
         }
 
-        return createdOrder;
+        // Mark the order as having successfully deducted stock.
+        const savedOrder = await tx.order.update({
+          where: {
+            id: createdOrder.id,
+          },
+          data: {
+            stockDeductedAt: new Date(),
+          },
+          include: {
+            items: true,
+            statusHistory: true,
+          },
+        });
+
+        return savedOrder;
       }
     );
 
@@ -826,7 +1065,7 @@ app.get(
 );
 
 /* ============================================================================
-   ADMIN - CREATE PRODUCT
+   ADMIN - CREATE / UPDATE PRODUCT
 ============================================================================ */
 
 app.post(
@@ -844,15 +1083,15 @@ app.post(
         productType,
         pack,
         countryOfOrigin,
-        sku,
         barcode,
         prescriptionRequired,
         image,
         description,
-
-        // Legacy compatibility
         mrp,
-        net,
+        discountType = DiscountType.NONE,
+        discountValue = 0,
+        buyQuantity = 0,
+        freeQuantity = 0,
         scheme,
         expiry,
         stock,
@@ -864,134 +1103,91 @@ app.post(
         !company?.trim() ||
         !composition?.trim() ||
         !category?.trim() ||
-        !pack?.trim() ||
-        !sku?.trim()
+        !pack?.trim()
       ) {
         return res.status(400).json({
           error:
-            'Name, company, composition, category, pack and SKU are required.',
+            'Name, company, composition, category and pack are required.',
         });
       }
 
-      const parsedMrp = Number(
-        mrp ?? 0
-      );
-
-      const parsedNet = Number(
-        net ?? parsedMrp
-      );
-
-      if (
-        !Number.isFinite(parsedMrp) ||
-        parsedMrp < 0 ||
-        !Number.isFinite(parsedNet) ||
-        parsedNet < 0
-      ) {
+      let pricing;
+      try {
+        pricing = calculateProductPricing({
+          mrp,
+          discountType,
+          discountValue,
+          buyQuantity,
+          freeQuantity,
+        });
+      } catch (error) {
         return res.status(400).json({
-          error:
-            'MRP and Net must be valid non-negative numbers.',
+          error: error?.message || 'Invalid pricing details.',
         });
       }
 
       const parsedExpiry = parseDate(expiry);
-
-if (!parsedExpiry) {
-  return res.status(400).json({
-    error: 'Expiry date is required and must be valid.',
-  });
-} 
-      const product =
-        await prisma.product.create({
-          data: {
-            name: name.trim(),
-            company: company.trim(),
-            composition:
-              composition.trim(),
-            category: category.trim(),
-            medicineType:
-              medicineType?.trim() ||
-              null,
-            productType:
-              productType?.trim() ||
-              null,
-            pack: pack.trim(),
-            countryOfOrigin:
-              countryOfOrigin?.trim() ||
-              null,
-            sku: sku.trim(),
-            barcode:
-              barcode?.trim() || null,
-            prescriptionRequired:
-              Boolean(
-                prescriptionRequired
-              ),
-            image:
-              image?.trim() || null,
-            description:
-              description?.trim() ||
-              null,
-
-            // Legacy compatibility
-            mrp: parsedMrp,
-            net: parsedNet,
-            scheme:
-              scheme?.trim() || null,
-            expiry: parsedExpiry,
-            stock: Math.max(
-              0,
-              Number(stock) || 0
-            ),
-            isActive:
-              isActive !== false,
-          },
-
-          include: {
-            inventoryBatches: true,
-          },
-        });
-
-      res.status(201).json(
-        serializeProduct(product)
-      );
-    } catch (error) {
-      if (error?.code === 'P2002') {
-        const target =
-          error?.meta?.target;
-
-        if (
-          Array.isArray(target) &&
-          target.includes('sku')
-        ) {
-          return res.status(409).json({
-            error:
-              'A product with this SKU already exists.',
-          });
-        }
-
-        if (
-          Array.isArray(target) &&
-          target.includes('barcode')
-        ) {
-          return res.status(409).json({
-            error:
-              'A product with this barcode already exists.',
-          });
-        }
-
-        return res.status(409).json({
-          error:
-            'A product with this name, company and pack already exists.',
+      if (!parsedExpiry) {
+        return res.status(400).json({
+          error: 'Expiry date is required and must be valid.',
         });
       }
 
+      const generatedSku =
+        `AUTO-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+      const product = await prisma.product.create({
+        data: {
+          name: name.trim(),
+          company: company.trim(),
+          composition: composition.trim(),
+          category: category.trim(),
+          medicineType: medicineType?.trim() || null,
+          productType: productType?.trim() || null,
+          pack: pack.trim(),
+          countryOfOrigin: countryOfOrigin?.trim() || null,
+          sku: generatedSku,
+          barcode: barcode?.trim() || null,
+          prescriptionRequired: Boolean(prescriptionRequired),
+          image: image?.trim() || null,
+          description: description?.trim() || null,
+
+          mrp: pricing.mrp,
+          ptr: pricing.ptr,
+          gst: pricing.gst,
+          discountType: pricing.discountType,
+          discountValue: pricing.discountValue,
+          discountAmount: pricing.discountAmount,
+          effectivePtr: pricing.effectivePtr,
+          buyQuantity: pricing.buyQuantity,
+          freeQuantity: pricing.freeQuantity,
+          net: pricing.effectivePtr,
+
+          scheme: scheme?.trim() || null,
+          expiry: parsedExpiry,
+          stock: Math.max(0, Number(stock) || 0),
+          isActive: isActive !== false,
+        },
+        include: { inventoryBatches: true },
+      });
+
+      res.status(201).json(serializeProduct(product));
+    } catch (error) {
+      if (error?.code === 'P2002') {
+        const target = error?.meta?.target;
+        if (Array.isArray(target) && target.includes('barcode')) {
+          return res.status(409).json({
+            error: 'A product with this barcode already exists.',
+          });
+        }
+        return res.status(409).json({
+          error: 'A product with the same product details already exists.',
+        });
+      }
       next(error);
     }
   }
 );
-
-/* ============================================================================
-   ADMIN - UPDATE PRODUCT
-============================================================================ */
 
 app.patch(
   '/api/admin/products/:id',
@@ -1008,15 +1204,15 @@ app.patch(
         productType,
         pack,
         countryOfOrigin,
-        sku,
         barcode,
         prescriptionRequired,
         image,
         description,
-
-        // Legacy compatibility
         mrp,
-        net,
+        discountType = DiscountType.NONE,
+        discountValue = 0,
+        buyQuantity = 0,
+        freeQuantity = 0,
         scheme,
         expiry,
         stock,
@@ -1028,139 +1224,97 @@ app.patch(
         !company?.trim() ||
         !composition?.trim() ||
         !category?.trim() ||
-        !pack?.trim() ||
-        !sku?.trim()
+        !pack?.trim()
       ) {
         return res.status(400).json({
           error:
-            'Name, company, composition, category, pack and SKU are required.',
+            'Name, company, composition, category and pack are required.',
         });
       }
 
-      const parsedMrp = Number(mrp);
-
-      const parsedNet = Number(net);
-
-      if (
-        !Number.isFinite(parsedMrp) ||
-        parsedMrp < 0 ||
-        !Number.isFinite(parsedNet) ||
-        parsedNet < 0
-      ) {
+      let pricing;
+      try {
+        pricing = calculateProductPricing({
+          mrp,
+          discountType,
+          discountValue,
+          buyQuantity,
+          freeQuantity,
+        });
+      } catch (error) {
         return res.status(400).json({
-          error:
-            'MRP and Net must be valid non-negative numbers.',
+          error: error?.message || 'Invalid pricing details.',
         });
       }
 
-      const parsedExpiry =
-        parseDate(expiry);
-
+      const parsedExpiry = parseDate(expiry);
       if (!parsedExpiry) {
         return res.status(400).json({
-          error:
-            'Enter a valid expiry date.',
+          error: 'Enter a valid expiry date.',
         });
       }
 
-      const product =
-        await prisma.product.update({
-          where: {
-            id: req.params.id,
-          },
+      const existingProduct = await prisma.product.findUnique({
+        where: { id: req.params.id },
+      });
 
-          data: {
-            name: name.trim(),
-            company: company.trim(),
-            composition:
-              composition.trim(),
-            category: category.trim(),
-            medicineType:
-              medicineType?.trim() ||
-              null,
-            productType:
-              productType?.trim() ||
-              null,
-            pack: pack.trim(),
-            countryOfOrigin:
-              countryOfOrigin?.trim() ||
-              null,
-            sku: sku.trim(),
-            barcode:
-              barcode?.trim() || null,
-            prescriptionRequired:
-              Boolean(
-                prescriptionRequired
-              ),
-            image:
-              image?.trim() || null,
-            description:
-              description?.trim() ||
-              null,
+      if (!existingProduct) {
+        return res.status(404).json({ error: 'Product not found.' });
+      }
 
-            // Legacy compatibility
-            mrp: parsedMrp,
-            net: parsedNet,
-            scheme:
-              scheme?.trim() || null,
-            expiry: parsedExpiry,
-            stock: Math.max(
-              0,
-              Number(stock) || 0
-            ),
-            isActive:
-              isActive !== false,
-          },
+      const product = await prisma.product.update({
+        where: { id: req.params.id },
+        data: {
+          name: name.trim(),
+          company: company.trim(),
+          composition: composition.trim(),
+          category: category.trim(),
+          medicineType: medicineType?.trim() || null,
+          productType: productType?.trim() || null,
+          pack: pack.trim(),
+          countryOfOrigin: countryOfOrigin?.trim() || null,
+          barcode: barcode?.trim() || null,
+          prescriptionRequired: Boolean(prescriptionRequired),
+          image: image?.trim() || null,
+          description: description?.trim() || null,
 
-          include: {
-            inventoryBatches: {
-              orderBy: {
-                expiryDate: 'asc',
-              },
-            },
-          },
-        });
+          mrp: pricing.mrp,
+          ptr: pricing.ptr,
+          gst: pricing.gst,
+          discountType: pricing.discountType,
+          discountValue: pricing.discountValue,
+          discountAmount: pricing.discountAmount,
+          effectivePtr: pricing.effectivePtr,
+          buyQuantity: pricing.buyQuantity,
+          freeQuantity: pricing.freeQuantity,
+          net: pricing.effectivePtr,
 
-      res.json(
-        serializeProduct(product)
-      );
+          scheme: scheme?.trim() || null,
+          expiry: parsedExpiry,
+          stock: Math.max(0, Number(stock) || 0),
+          isActive: isActive !== false,
+        },
+        include: {
+          inventoryBatches: { orderBy: { expiryDate: 'asc' } },
+        },
+      });
+
+      res.json(serializeProduct(product));
     } catch (error) {
       if (error?.code === 'P2002') {
-        const target =
-          error?.meta?.target;
-
-        if (
-          Array.isArray(target) &&
-          target.includes('sku')
-        ) {
+        const target = error?.meta?.target;
+        if (Array.isArray(target) && target.includes('barcode')) {
           return res.status(409).json({
-            error:
-              'A product with this SKU already exists.',
+            error: 'A product with this barcode already exists.',
           });
         }
-
-        if (
-          Array.isArray(target) &&
-          target.includes('barcode')
-        ) {
-          return res.status(409).json({
-            error:
-              'A product with this barcode already exists.',
-          });
-        }
-
         return res.status(409).json({
-          error:
-            'A product with this name, company and pack already exists.',
+          error: 'A product with the same product details already exists.',
         });
       }
-
       if (error?.code === 'P2025') {
-        return res.status(404).json({
-          error: 'Product not found.',
-        });
+        return res.status(404).json({ error: 'Product not found.' });
       }
-
       next(error);
     }
   }
@@ -1278,51 +1432,33 @@ app.post(
           },
         });
 
-      // Keep legacy Product fields synchronized.
+      // Inventory batches manage stock/expiry only.
+      // Product-level pricing remains canonical and is calculated
+      // by calculateProductPricing in the product create/update routes.
       const allBatches =
-        await prisma.inventoryBatch.findMany(
-          {
-            where: {
-              productId: product.id,
-            },
-          }
-        );
+        await prisma.inventoryBatch.findMany({
+          where: { productId: product.id },
+        });
 
-      const totalStock =
-        allBatches.reduce(
-          (sum, item) =>
-            sum +
-            Number(item.quantity) +
-            Number(item.freeQuantity),
-          0
-        );
+      const totalStock = allBatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.quantity || 0) +
+          Number(item.freeQuantity || 0),
+        0
+      );
 
-      const earliestExpiry =
-        allBatches
-          .map(
-            (item) =>
-              new Date(item.expiryDate)
-          )
-          .sort(
-            (a, b) =>
-              a.getTime() - b.getTime()
-          )[0];
+      const earliestExpiry = allBatches
+        .map((item) => new Date(item.expiryDate))
+        .sort((a, b) => a.getTime() - b.getTime())[0];
 
       await prisma.product.update({
-        where: {
-          id: product.id,
-        },
+        where: { id: product.id },
         data: {
           stock: totalStock,
-          mrp: parsedMrp,
-          net: Math.max(
-            0,
-            parsedMrp -
-              parsedDiscount
-          ),
-          expiry:
-            earliestExpiry ||
-            parsedExpiry,
+          ...(earliestExpiry
+            ? { expiry: earliestExpiry }
+            : {}),
         },
       });
 
@@ -1518,52 +1654,31 @@ app.patch(
           }
         );
 
-      // Recalculate legacy Product fields.
-      const allBatches =
-        await prisma.inventoryBatch.findMany(
-          {
-            where: {
-              productId:
-                existing.productId,
-            },
-            orderBy: {
-              expiryDate: 'asc',
-            },
-          }
-        );
+      // Batch edits must never overwrite canonical product pricing.
+      const allBatches = await prisma.inventoryBatch.findMany({
+        where: { productId: existing.productId },
+        orderBy: { expiryDate: 'asc' },
+      });
 
-      const totalStock =
-        allBatches.reduce(
-          (sum, item) =>
-            sum +
-            Number(item.quantity) +
-            Number(item.freeQuantity),
-          0
-        );
+      const totalStock = allBatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.quantity || 0) +
+          Number(item.freeQuantity || 0),
+        0
+      );
 
-      const primaryBatch =
-        allBatches[0];
+      const primaryBatch = allBatches[0];
 
-      if (primaryBatch) {
-        await prisma.product.update({
-          where: {
-            id: existing.productId,
-          },
-          data: {
-            stock: totalStock,
-            mrp: primaryBatch.mrp,
-            net: Math.max(
-              0,
-              Number(primaryBatch.mrp) -
-                Number(
-                  primaryBatch.discount
-                )
-            ),
-            expiry:
-              primaryBatch.expiryDate,
-          },
-        });
-      }
+      await prisma.product.update({
+        where: { id: existing.productId },
+        data: {
+          stock: totalStock,
+          ...(primaryBatch
+            ? { expiry: primaryBatch.expiryDate }
+            : {}),
+        },
+      });
 
       res.json(
         serializeInventoryBatch(batch)
@@ -1773,35 +1888,158 @@ app.patch(
         });
       }
 
-      const order =
-        await prisma.order.update({
-          where: {
-            id: target.id,
-          },
-          data: {
-            status:
-              status,
+      const allowedTransitions = {
+        [OrderStatus.SUBMITTED]: [
+          OrderStatus.CONFIRMED,
+          OrderStatus.CANCELLED,
+        ],
+        [OrderStatus.CONFIRMED]: [
+          OrderStatus.PACKED,
+          OrderStatus.CANCELLED,
+        ],
+        [OrderStatus.PACKED]: [
+          OrderStatus.DISPATCHED,
+        ],
+        [OrderStatus.DISPATCHED]: [
+          OrderStatus.DELIVERED,
+        ],
+        [OrderStatus.DELIVERED]: [],
+        [OrderStatus.CANCELLED]: [],
+      };
 
-            statusHistory: {
-              create: {
-                status:
-                  status,
-                note:
-                  req.body.note?.trim() ||
-                  null,
-              },
-            },
-          },
+      const currentStatus = target.status;
+      const allowed = allowedTransitions[currentStatus] || [];
 
-          include: {
-            items: true,
-            statusHistory: {
-              orderBy: {
-                createdAt: 'asc',
-              },
-            },
-          },
+      if (
+        status !== currentStatus &&
+        !allowed.includes(status)
+      ) {
+        return res.status(400).json({
+          error: `Invalid order status transition: ${currentStatus} → ${status}.`,
         });
+      }
+
+      if (status === currentStatus) {
+        return res.status(400).json({
+          error: `Order is already ${status}.`,
+        });
+      }
+
+      const order = await prisma.$transaction(async (tx) => {
+        let restoredOrder;
+
+        if (status === OrderStatus.CANCELLED) {
+          // Restore Product.stock exactly once.
+          // stockRestoredAt makes cancellation idempotent.
+          const current = await tx.order.findUnique({
+            where: {
+              id: target.id,
+            },
+            include: {
+              items: true,
+            },
+          });
+
+          if (!current) {
+            throw new Error('Order not found.');
+          }
+
+          if (!current.stockRestoredAt) {
+            for (const item of current.items) {
+              await tx.product.update({
+                where: {
+                  id: item.productId,
+                },
+                data: {
+                  stock: {
+                    increment: item.quantity,
+                  },
+                },
+              });
+            }
+
+            restoredOrder = await tx.order.update({
+              where: {
+                id: current.id,
+              },
+              data: {
+                status: OrderStatus.CANCELLED,
+                cancelledAt: new Date(),
+                stockRestoredAt: new Date(),
+                statusHistory: {
+                  create: {
+                    status: OrderStatus.CANCELLED,
+                    note:
+                      req.body.note?.trim() ||
+                      'Order cancelled. Stock restored.',
+                  },
+                },
+              },
+              include: {
+                items: true,
+                statusHistory: {
+                  orderBy: {
+                    createdAt: 'asc',
+                  },
+                },
+              },
+            });
+          } else {
+            restoredOrder = await tx.order.update({
+              where: {
+                id: current.id,
+              },
+              data: {
+                status: OrderStatus.CANCELLED,
+                cancelledAt: current.cancelledAt || new Date(),
+                statusHistory: {
+                  create: {
+                    status: OrderStatus.CANCELLED,
+                    note:
+                      req.body.note?.trim() ||
+                      'Order cancelled. Stock had already been restored.',
+                  },
+                },
+              },
+              include: {
+                items: true,
+                statusHistory: {
+                  orderBy: {
+                    createdAt: 'asc',
+                  },
+                },
+              },
+            });
+          }
+        } else {
+          restoredOrder = await tx.order.update({
+            where: {
+              id: target.id,
+            },
+            data: {
+              status,
+              statusHistory: {
+                create: {
+                  status,
+                  note:
+                    req.body.note?.trim() ||
+                    null,
+                },
+              },
+            },
+            include: {
+              items: true,
+              statusHistory: {
+                orderBy: {
+                  createdAt: 'asc',
+                },
+              },
+            },
+          });
+        }
+
+        return restoredOrder;
+      });
 
       res.json(
         serializeOrder(order)
@@ -1828,27 +2066,41 @@ app.post(
             columns: true,
             skip_empty_lines: true,
             trim: true,
+            bom: true,
           })
         : Array.isArray(req.body.rows)
-        ? req.body.rows.map(
-            (row) => ({
-              Name: row[0],
-              Company: row[1],
-              Composition: row[2],
-              Category: row[3],
-              Pack: row[4],
-              MRP: row[5],
-              Net: row[6],
-              Expiry: row[7],
-              Scheme: row[8],
-            })
-          )
+        ? req.body.rows.map((row) => ({
+            'Product Name': row[0],
+            Composition: row[1],
+            Company: row[2],
+            Category: row[3],
+            'Medicine Type': row[4],
+            'Product Type': row[5],
+            'Pack Size': row[6],
+            Quantity: row[7],
+            MRP: row[8],
+            'Discount Type': row[9],
+            'Discount %': row[10],
+            'Offer Buy Quantity': row[11],
+            'Offer Free Quantity': row[12],
+            'Expiry Date': row[13],
+            Barcode: row[14],
+            'Prescription Required': row[15],
+            'Country of Origin': row[16],
+            Image: row[17],
+            Description: row[18],
+          }))
         : null;
 
       if (!rows) {
         return res.status(400).json({
-          error:
-            'Upload a CSV file or provide parsed rows.',
+          error: 'Upload a CSV file or provide parsed rows.',
+        });
+      }
+
+      if (!rows.length) {
+        return res.status(400).json({
+          error: 'The CSV file contains no data rows.',
         });
       }
 
@@ -1856,126 +2108,158 @@ app.post(
       let updated = 0;
       const errors = [];
 
-      for (
-        const [index, row] of rows.entries()
-      ) {
+      for (const [index, row] of rows.entries()) {
         try {
-          const name =
-            cleanString(row.Name);
-          const company =
-            cleanString(row.Company);
-          const composition =
-            cleanString(row.Composition);
-          const category =
-            cleanString(row.Category);
-          const pack =
-            cleanString(row.Pack);
+          const name = cleanString(row['Product Name'] || row.Name);
+          const company = cleanString(row.Company);
+          const composition = cleanString(row.Composition);
+          const category = cleanString(row.Category);
+          const medicineType = cleanString(row['Medicine Type']);
+          const productType = cleanString(row['Product Type']);
+          const pack = cleanString(row['Pack Size'] || row.Pack);
+          const quantity = Number(row.Quantity ?? row.Stock ?? 0);
+          const mrp = Number(row.MRP);
+          const discountType =
+            cleanString(row['Discount Type']) || DiscountType.NONE;
+          const discountValue = Number(row['Discount %'] ?? 0);
+          const buyQuantity = Number(row['Offer Buy Quantity'] ?? 0);
+          const freeQuantity = Number(row['Offer Free Quantity'] ?? 0);
+          const parsedExpiry = parseDate(
+            row['Expiry Date'] || row.Expiry
+          );
+          const barcode = cleanString(row.Barcode) || null;
+          const countryOfOrigin =
+            cleanString(row['Country of Origin']) || null;
+          const prescriptionRequired = [
+            'true',
+            'yes',
+            '1',
+          ].includes(
+            cleanString(row['Prescription Required']).toLowerCase()
+          );
+          const image = cleanString(row.Image) || null;
+          const description = cleanString(row.Description) || null;
 
-          const parsedMrp =
-            Number(row.MRP);
-          const parsedNet =
-            Number(row.Net);
-
-          const parsedExpiry =
-            parseDate(row.Expiry);
-
-          if (
-            !name ||
-            !company ||
-            !composition ||
-            !category ||
-            !pack ||
-            !Number.isFinite(parsedMrp) ||
-            !Number.isFinite(parsedNet) ||
-            !parsedExpiry
-          ) {
+          if (!name || !company || !composition || !category || !pack) {
             throw new Error(
-              'Missing/invalid required fields'
+              'Product Name, Company, Composition, Category and Pack Size are required.'
             );
           }
 
-          // Legacy imports did not have SKU.
-          // Generate a stable SKU from the row.
-          const sku =
-            cleanString(row.SKU) ||
-            `LEGACY-${Date.now()}-${index + 1}`;
-
-          const existing =
-            await prisma.product.findUnique(
-              {
-                where: {
-                  name_company_pack: {
-                    name,
-                    company,
-                    pack,
-                  },
-                },
-              }
+          if (!Number.isFinite(quantity) || quantity < 0) {
+            throw new Error(
+              'Quantity must be a valid non-negative number.'
             );
+          }
+
+          if (!parsedExpiry) {
+            throw new Error('Expiry Date is required and must be valid.');
+          }
+
+          if (parsedExpiry < new Date()) {
+            throw new Error('Expiry Date cannot be in the past.');
+          }
+
+          let pricing;
+          try {
+            pricing = calculateProductPricing({
+              mrp,
+              discountType,
+              discountValue,
+              buyQuantity,
+              freeQuantity,
+            });
+          } catch (error) {
+            throw new Error(error?.message || 'Invalid pricing details.');
+          }
+
+          const existing = await prisma.product.findUnique({
+            where: {
+              name_company_pack: {
+                name,
+                company,
+                pack,
+              },
+            },
+          });
 
           if (existing) {
             await prisma.product.update({
-              where: {
-                id: existing.id,
-              },
+              where: { id: existing.id },
               data: {
                 name,
                 company,
                 composition,
                 category,
+                medicineType: medicineType || null,
+                productType: productType || null,
                 pack,
-                mrp: parsedMrp,
-                net: parsedNet,
-                scheme:
-                  cleanString(
-                    row.Scheme
-                  ) || null,
-                expiry:
-                  parsedExpiry,
-                stock: Math.max(
-                  0,
-                  Number(row.Stock) ||
-                    0
-                ),
+                countryOfOrigin,
+                barcode,
+                prescriptionRequired,
+                image,
+                description,
+                mrp: pricing.mrp,
+                ptr: pricing.ptr,
+                gst: pricing.gst,
+                discountType: pricing.discountType,
+                discountValue: pricing.discountValue,
+                discountAmount: pricing.discountAmount,
+                effectivePtr: pricing.effectivePtr,
+                buyQuantity: pricing.buyQuantity,
+                freeQuantity: pricing.freeQuantity,
+                net: pricing.effectivePtr,
+                scheme: null,
+                expiry: parsedExpiry,
+                stock: Math.max(0, quantity + (pricing.freeQuantity || 0)),
                 isActive: true,
               },
             });
-
             updated++;
           } else {
+            const generatedSku =
+              `AUTO-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 8)
+                .toUpperCase()}`;
+
             await prisma.product.create({
               data: {
                 name,
                 company,
                 composition,
                 category,
+                medicineType: medicineType || null,
+                productType: productType || null,
                 pack,
-                sku,
-                mrp: parsedMrp,
-                net: parsedNet,
-                scheme:
-                  cleanString(
-                    row.Scheme
-                  ) || null,
-                expiry:
-                  parsedExpiry,
-                stock: Math.max(
-                  0,
-                  Number(row.Stock) ||
-                    0
-                ),
+                countryOfOrigin,
+                sku: generatedSku,
+                barcode,
+                prescriptionRequired,
+                image,
+                description,
+                mrp: pricing.mrp,
+                ptr: pricing.ptr,
+                gst: pricing.gst,
+                discountType: pricing.discountType,
+                discountValue: pricing.discountValue,
+                discountAmount: pricing.discountAmount,
+                effectivePtr: pricing.effectivePtr,
+                buyQuantity: pricing.buyQuantity,
+                freeQuantity: pricing.freeQuantity,
+                net: pricing.effectivePtr,
+                scheme: null,
+                expiry: parsedExpiry,
+                stock: Math.max(0, quantity + (pricing.freeQuantity || 0)),
                 isActive: true,
               },
             });
-
             created++;
           }
         } catch (error) {
           errors.push({
             row: index + 2,
-            error:
-              error?.message ||
-              'Import failed',
+            error: error?.message || 'Import failed',
           });
         }
       }
@@ -1983,8 +2267,7 @@ app.post(
       await prisma.productImport.create({
         data: {
           fileName:
-            req.file?.originalname ||
-            'browser-import.csv',
+            req.file?.originalname || 'browser-import.csv',
           created,
           updated,
           failed: errors.length,
@@ -2018,33 +2301,28 @@ app.post(
     try {
       if (!req.file) {
         return res.status(400).json({
-          error:
-            'Upload an inventory CSV file.',
+          error: 'Upload an inventory CSV file.',
         });
       }
 
-      const rows = parse(
-        req.file.buffer,
-        {
-          columns: true,
-          skip_empty_lines: true,
-          trim: true,
-          bom: true,
-        }
-      );
+      const rows = parse(req.file.buffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+      });
 
       if (!rows.length) {
         return res.status(400).json({
-          error:
-            'The CSV file contains no data rows.',
+          error: 'The CSV file contains no data rows.',
         });
       }
 
+      // New pricing-driven import format.
+      // SKU, Batch Number, PTR and GST are deliberately not input fields.
       const requiredHeaders = [
-        'SKU',
         'Product Name',
         'Composition',
-        'Batch Number',
         'Company',
         'Category',
         'Medicine Type',
@@ -2052,26 +2330,21 @@ app.post(
         'Pack Size',
         'Quantity',
         'MRP',
-        'PTR',
+        'Discount Type',
+        'Discount %',
+        'Offer Buy Quantity',
+        'Offer Free Quantity',
         'Expiry Date',
       ];
 
-      const actualHeaders =
-        Object.keys(rows[0]);
-
-      const missingHeaders =
-        requiredHeaders.filter(
-          (header) =>
-            !actualHeaders.includes(
-              header
-            )
-        );
+      const actualHeaders = Object.keys(rows[0]);
+      const missingHeaders = requiredHeaders.filter(
+        (header) => !actualHeaders.includes(header)
+      );
 
       if (missingHeaders.length) {
         return res.status(400).json({
-          error: `Missing required CSV columns: ${missingHeaders.join(
-            ', '
-          )}`,
+          error: `Missing required CSV columns: ${missingHeaders.join(', ')}`,
         });
       }
 
@@ -2079,424 +2352,234 @@ app.post(
       let updatedProducts = 0;
       let createdBatches = 0;
       let updatedBatches = 0;
-
       const errors = [];
 
-      for (
-        const [index, row] of rows.entries()
-      ) {
+      for (const [index, row] of rows.entries()) {
         try {
-          const sku =
-            cleanString(row['SKU']);
-          const productName =
-            cleanString(
-              row['Product Name']
-            );
-          const composition =
-            cleanString(
-              row['Composition']
-            );
-          const batchNumber =
-            cleanString(
-              row['Batch Number']
-            );
-          const company =
-            cleanString(row['Company']);
-          const category =
-            cleanString(
-              row['Category']
-            );
-          const medicineType =
-            cleanString(
-              row['Medicine Type']
-            );
-          const productType =
-            cleanString(
-              row['Product Type']
-            );
-          const pack =
-            cleanString(
-              row['Pack Size']
-            );
+          const productName = cleanString(row['Product Name']);
+          const composition = cleanString(row['Composition']);
+          const company = cleanString(row['Company']);
+          const category = cleanString(row['Category']);
+          const medicineType = cleanString(row['Medicine Type']);
+          const productType = cleanString(row['Product Type']);
+          const pack = cleanString(row['Pack Size']);
 
-          const quantity =
-            Number(row['Quantity']);
-          const freeQuantity =
-            Number(
-              row['Free Quantity'] || 0
-            );
-          const mrp =
-            Number(row['MRP']);
-          const ptr =
-            Number(row['PTR']);
-          const discount =
-            Number(
-              row['Discount'] || 0
-            );
-          const gst =
-            Number(row['GST'] || 0);
+          const quantity = Number(row['Quantity']);
+          const mrp = Number(row['MRP']);
+          const discountTypeRaw = cleanString(row['Discount Type']).toUpperCase();
+          const discountValue = Number(row['Discount %'] || 0);
+          const buyQuantity = Number(row['Offer Buy Quantity'] || 0);
+          const freeQuantity = Number(row['Offer Free Quantity'] || 0);
+          const expiryDate = parseDate(row['Expiry Date']);
 
-          const expiryDate =
-            parseDate(
-              row['Expiry Date']
-            );
+          const discountType = Object.values(DiscountType).includes(discountTypeRaw)
+            ? discountTypeRaw
+            : DiscountType.NONE;
 
           if (
-            !sku ||
             !productName ||
             !composition ||
-            !batchNumber ||
             !company ||
             !category ||
             !medicineType ||
             !productType ||
             !pack
           ) {
-            throw new Error(
-              'Missing required product/batch fields'
-            );
+            throw new Error('Missing required product fields');
           }
 
-          if (
-            !Number.isFinite(
-              quantity
-            ) ||
-            quantity < 0
-          ) {
-            throw new Error(
-              'Quantity must be a valid non-negative number'
-            );
-          }
-
-          if (
-            !Number.isFinite(
-              freeQuantity
-            ) ||
-            freeQuantity < 0
-          ) {
-            throw new Error(
-              'Free Quantity must be a valid non-negative number'
-            );
-          }
-
-          if (
-            !Number.isFinite(mrp) ||
-            mrp < 0
-          ) {
-            throw new Error(
-              'MRP must be a valid non-negative number'
-            );
-          }
-
-          if (
-            !Number.isFinite(ptr) ||
-            ptr < 0
-          ) {
-            throw new Error(
-              'PTR must be a valid non-negative number'
-            );
-          }
-
-          if (
-            !Number.isFinite(
-              discount
-            ) ||
-            discount < 0
-          ) {
-            throw new Error(
-              'Discount must be a valid non-negative number'
-            );
-          }
-
-          if (
-            !Number.isFinite(gst) ||
-            gst < 0
-          ) {
-            throw new Error(
-              'GST must be a valid non-negative number'
-            );
+          if (!Number.isFinite(quantity) || quantity < 0) {
+            throw new Error('Quantity must be a valid non-negative number');
           }
 
           if (!expiryDate) {
-  throw new Error(
-    'Expiry Date is invalid'
-  );
-}
+            throw new Error('Expiry Date is invalid');
+          }
 
-if (expiryDate < new Date()) {
-  throw new Error(
-    'Expiry Date cannot be in the past'
-  );
-}
+          if (expiryDate < new Date()) {
+            throw new Error('Expiry Date cannot be in the past');
+          }
 
-          const barcode =
-            cleanString(
-              row['Barcode']
-            ) || null;
+          let pricing;
+          try {
+            pricing = calculateProductPricing({
+              mrp,
+              discountType,
+              discountValue,
+              buyQuantity,
+              freeQuantity,
+            });
+          } catch (error) {
+            throw new Error(error?.message || 'Invalid pricing details');
+          }
 
-          const countryOfOrigin =
-            cleanString(
-              row['Country of Origin']
-            ) || null;
+          const barcode = cleanString(row['Barcode']) || null;
+          const countryOfOrigin = cleanString(row['Country of Origin']) || null;
+          const prescriptionRequired = ['true', 'yes', '1'].includes(
+            cleanString(row['Prescription Required']).toLowerCase()
+          );
+          const image = cleanString(row['Image']) || null;
+          const description = cleanString(row['Description']) || null;
+          const scheme = cleanString(row['Scheme']) || null;
 
-          const prescriptionRequired =
-            ['true', 'yes', '1'].includes(
-              cleanString(
-                row[
-                  'Prescription Required'
-                ]
-              ).toLowerCase()
+          // Internal identifiers are generated and never shown/entered in CSV.
+          const generatedBatchNumber =
+            `AUTO-IMPORT-${index + 1}-${expiryDate.toISOString().slice(0, 10)}`;
+
+          await prisma.$transaction(async (tx) => {
+            let product = await tx.product.findUnique({
+              where: {
+                name_company_pack: {
+                  name: productName,
+                  company,
+                  pack,
+                },
+              },
+            });
+
+            if (!product) {
+              product = await tx.product.create({
+                data: {
+                  name: productName,
+                  company,
+                  composition,
+                  category,
+                  medicineType,
+                  productType,
+                  pack,
+                  countryOfOrigin,
+                  sku: `AUTO-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+                  barcode,
+                  prescriptionRequired,
+                  image,
+                  description,
+                  mrp: pricing.mrp,
+                  ptr: pricing.ptr,
+                  gst: pricing.gst,
+                  discountType: pricing.discountType,
+                  discountValue: pricing.discountValue,
+                  discountAmount: pricing.discountAmount,
+                  effectivePtr: pricing.effectivePtr,
+                  buyQuantity: pricing.buyQuantity,
+                  freeQuantity: pricing.freeQuantity,
+                  net: pricing.effectivePtr,
+                  scheme,
+                  expiry: expiryDate,
+                  stock: quantity,
+                  isActive: true,
+                },
+              });
+              createdProducts++;
+            } else {
+              product = await tx.product.update({
+                where: { id: product.id },
+                data: {
+                  composition,
+                  category,
+                  medicineType,
+                  productType,
+                  countryOfOrigin,
+                  barcode,
+                  prescriptionRequired,
+                  image,
+                  description,
+                  mrp: pricing.mrp,
+                  ptr: pricing.ptr,
+                  gst: pricing.gst,
+                  discountType: pricing.discountType,
+                  discountValue: pricing.discountValue,
+                  discountAmount: pricing.discountAmount,
+                  effectivePtr: pricing.effectivePtr,
+                  buyQuantity: pricing.buyQuantity,
+                  freeQuantity: pricing.freeQuantity,
+                  net: pricing.effectivePtr,
+                  scheme,
+                  expiry: expiryDate,
+                  isActive: true,
+                },
+              });
+              updatedProducts++;
+            }
+
+            const existingBatch = await tx.inventoryBatch.findUnique({
+              where: {
+                productId_batchNumber: {
+                  productId: product.id,
+                  batchNumber: generatedBatchNumber,
+                },
+              },
+            });
+
+            await tx.inventoryBatch.upsert({
+              where: {
+                productId_batchNumber: {
+                  productId: product.id,
+                  batchNumber: generatedBatchNumber,
+                },
+              },
+              create: {
+                productId: product.id,
+                batchNumber: generatedBatchNumber,
+                quantity,
+                freeQuantity: 0,
+                mrp: pricing.mrp,
+                ptr: pricing.ptr,
+                discount: pricing.discountAmount,
+                gst: pricing.gst,
+                expiryDate,
+              },
+              update: {
+                quantity,
+                freeQuantity: 0,
+                mrp: pricing.mrp,
+                ptr: pricing.ptr,
+                discount: pricing.discountAmount,
+                gst: pricing.gst,
+                expiryDate,
+              },
+            });
+
+            if (existingBatch) {
+              updatedBatches++;
+            } else {
+              createdBatches++;
+            }
+
+            const allBatches = await tx.inventoryBatch.findMany({
+              where: { productId: product.id },
+              orderBy: { expiryDate: 'asc' },
+            });
+
+            const totalStock = allBatches.reduce(
+              (sum, item) =>
+                sum + Number(item.quantity || 0) + Number(item.freeQuantity || 0),
+              0
             );
 
-          const image =
-            cleanString(
-              row['Image']
-            ) || null;
+            const primaryBatch = allBatches[0];
 
-          const description =
-            cleanString(
-              row['Description']
-            ) || null;
-
-          const result =
-            await prisma.$transaction(
-              async (tx) => {
-                let product =
-                  await tx.product.findUnique(
-                    {
-                      where: {
-                        sku,
-                      },
-                    }
-                  );
-
-                if (!product) {
-                  product =
-                    await tx.product.create(
-                      {
-                        data: {
-                          name:
-                            productName,
-                          company,
-                          composition,
-                          category,
-                          medicineType:
-                            medicineType ||
-                            null,
-                          productType:
-                            productType ||
-                            null,
-                          pack,
-                          countryOfOrigin,
-                          sku,
-                          barcode,
-                          prescriptionRequired,
-                          image,
-                          description,
-
-                          // Legacy compatibility
-                          mrp,
-                          net: Math.max(
-                            0,
-                            mrp - discount
-                          ),
-                          scheme: null,
-                          expiry:
-                            expiryDate,
-                          stock:
-                            quantity +
-                            freeQuantity,
-                          isActive: true,
-                        },
-                      }
-                    );
-
-                  createdProducts++;
-                } else {
-                  product =
-                    await tx.product.update(
-                      {
-                        where: {
-                          id: product.id,
-                        },
-                        data: {
-                          name:
-                            productName,
-                          company,
-                          composition,
-                          category,
-                          medicineType:
-                            medicineType ||
-                            null,
-                          productType:
-                            productType ||
-                            null,
-                          pack,
-                          countryOfOrigin,
-                          barcode,
-                          prescriptionRequired,
-                          image,
-                          description,
-                          isActive: true,
-                        },
-                      }
-                    );
-
-                  updatedProducts++;
-                }
-
-                const existingBatch =
-                  await tx.inventoryBatch.findUnique(
-                    {
-                      where: {
-                        productId_batchNumber:
-                          {
-                            productId:
-                              product.id,
-                            batchNumber,
-                          },
-                      },
-                    }
-                  );
-
-                const batch =
-                  await tx.inventoryBatch.upsert(
-                    {
-                      where: {
-                        productId_batchNumber:
-                          {
-                            productId:
-                              product.id,
-                            batchNumber,
-                          },
-                      },
-
-                      create: {
-                        productId:
-                          product.id,
-                        batchNumber,
-                        quantity,
-                        freeQuantity,
-                        mrp,
-                        ptr,
-                        discount,
-                        gst,
-                        expiryDate,
-                      },
-
-                      update: {
-                        quantity,
-                        freeQuantity,
-                        mrp,
-                        ptr,
-                        discount,
-                        gst,
-                        expiryDate,
-                      },
-                    }
-                  );
-
-                if (existingBatch) {
-                  updatedBatches++;
-                } else {
-                  createdBatches++;
-                }
-
-                const allBatches =
-                  await tx.inventoryBatch.findMany(
-                    {
-                      where: {
-                        productId:
-                          product.id,
-                      },
-                      orderBy: {
-                        expiryDate:
-                          'asc',
-                      },
-                    }
-                  );
-
-                const totalStock =
-                  allBatches.reduce(
-                    (
-                      sum,
-                      item
-                    ) =>
-                      sum +
-                      Number(
-                        item.quantity
-                      ) +
-                      Number(
-                        item.freeQuantity
-                      ),
-                    0
-                  );
-
-                const primaryBatch =
-                  allBatches[0];
-
-                await tx.product.update({
-                  where: {
-                    id: product.id,
-                  },
-                  data: {
-                    stock:
-                      totalStock,
-                    mrp:
-                      primaryBatch
-                        ? primaryBatch.mrp
-                        : mrp,
-                    net: primaryBatch
-                      ? Math.max(
-                          0,
-                          Number(
-                            primaryBatch.mrp
-                          ) -
-                            Number(
-                              primaryBatch.discount
-                            )
-                        )
-                      : Math.max(
-                          0,
-                          mrp - discount
-                        ),
-                    expiry:
-                      primaryBatch
-                        ? primaryBatch.expiryDate
-                        : expiryDate,
-                  },
-                });
-
-                return batch;
-              }
-            );
-
-          void result;
+            // Keep stock/expiry synchronized, but DO NOT derive pricing from batches.
+            await tx.product.update({
+              where: { id: product.id },
+              data: {
+                stock: totalStock,
+                ...(primaryBatch ? { expiry: primaryBatch.expiryDate } : {}),
+              },
+            });
+          });
         } catch (error) {
           errors.push({
             row: index + 2,
-            sku:
-              row['SKU'] || '',
-            batchNumber:
-              row['Batch Number'] || '',
-            error:
-              error?.message ||
-              'Import failed',
+            error: error?.message || 'Import failed',
           });
         }
       }
 
       await prisma.productImport.create({
         data: {
-          fileName:
-            req.file.originalname ||
-            'inventory-import.csv',
-          created:
-            createdProducts +
-            createdBatches,
-          updated:
-            updatedProducts +
-            updatedBatches,
+          fileName: req.file.originalname || 'inventory-import.csv',
+          created: createdProducts + createdBatches,
+          updated: updatedProducts + updatedBatches,
           failed: errors.length,
           errors,
         },
@@ -2504,17 +2587,14 @@ if (expiryDate < new Date()) {
 
       res.json({
         success: true,
-
         products: {
           created: createdProducts,
           updated: updatedProducts,
         },
-
         batches: {
           created: createdBatches,
           updated: updatedBatches,
         },
-
         failed: errors.length,
         errors,
       });
@@ -2532,6 +2612,12 @@ app.use(
   (error, _req, res, _next) => {
     console.error(error);
 
+    if (error?.message === 'CORS origin not allowed.') {
+      return res.status(403).json({
+        error: 'Origin not allowed.',
+      });
+    }
+
     if (error?.code === 'P2002') {
       return res.status(409).json({
         error:
@@ -2540,9 +2626,9 @@ app.use(
     }
 
     res.status(500).json({
-      error:
-        error?.message ||
-        'Unexpected server error.',
+      error: isProduction
+        ? 'Unexpected server error.'
+        : error?.message || 'Unexpected server error.',
     });
   }
 );

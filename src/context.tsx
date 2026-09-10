@@ -190,6 +190,7 @@ const CUSTOMER_PHONE_KEY = "singh.customerPhone";
 const CUSTOMER_PROFILE_KEY = "singh.customerProfile";
 const CUSTOMER_TOKEN_KEY = "singh.customerToken";
 const ADMIN_TOKEN_KEY = "singh.adminToken";
+const CART_ITEMS_KEY = "singh.cartItems";
 
 function safeRead<T>(key: string): T | null {
   try {
@@ -255,8 +256,12 @@ export function AppProvider({
     useState<Order[]>(MOCK_ORDERS);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  const [cartItems, setCartItems] =
-    useState<CartItem[]>([]);
+ const [cartItems, setCartItems] =
+  useState<CartItem[]>(() =>
+    typeof window === "undefined"
+      ? []
+      : safeRead<CartItem[]>(CART_ITEMS_KEY) || []
+  );
   const [isCartOpen, setIsCartOpen] =
     useState(false);
 
@@ -363,6 +368,10 @@ export function AppProvider({
       safeRemove(ADMIN_TOKEN_KEY);
     }
   }, [adminToken]);
+
+  useEffect(() => {
+  safeWrite(CART_ITEMS_KEY, cartItems);
+}, [cartItems]);
 
   // Validate persisted customer/admin sessions when the app starts.
   // A token that is expired, revoked, malformed, or belongs to the wrong
@@ -574,6 +583,21 @@ export function AppProvider({
     0
   );
 
+  // Customer-facing wholesale price.
+  // Prefer the automatic Effective PTR and fall back to legacy net
+  // for older products/API records that do not have effectivePtr yet.
+  const getEffectivePrice = useCallback((product: Product) => {
+    const value = (
+      product as Product & {
+        effectivePtr?: number | null;
+      }
+    ).effectivePtr;
+
+    return Number.isFinite(Number(value))
+      ? Number(value)
+      : Number(product.net || 0);
+  }, []);
+
   const cartTotal = cartItems.reduce((sum, item) => {
     const product = products.find(
       (entry) => entry.id === item.productId
@@ -583,7 +607,10 @@ export function AppProvider({
       return sum;
     }
 
-    return sum + product.net * item.quantity;
+    return (
+      sum +
+      getEffectivePrice(product) * item.quantity
+    );
   }, 0);
 
   const setIsLoggedIn = useCallback(

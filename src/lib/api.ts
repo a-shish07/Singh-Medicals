@@ -51,6 +51,44 @@ function productFromApi(product: any): Product {
     net: Number(product.net || 0),
     stock: Number(product.stock || 0),
 
+    ptr:
+  product.ptr == null
+    ? null
+    : Number(product.ptr),
+
+gst:
+  product.gst == null
+    ? 5
+    : Number(product.gst),
+
+discountType:
+  product.discountType || "NONE",
+
+discountValue:
+  product.discountValue == null
+    ? 0
+    : Number(product.discountValue),
+
+discountAmount:
+  product.discountAmount == null
+    ? 0
+    : Number(product.discountAmount),
+
+effectivePtr:
+  product.effectivePtr == null
+    ? Number(product.net || 0)
+    : Number(product.effectivePtr),
+
+buyQuantity:
+  product.buyQuantity == null
+    ? null
+    : Number(product.buyQuantity),
+
+freeQuantity:
+  product.freeQuantity == null
+    ? null
+    : Number(product.freeQuantity),
+
     expiry:
       typeof product.expiry === "string"
         ? new Date(product.expiry).toLocaleDateString("en-IN", {
@@ -630,7 +668,16 @@ export async function createAdminProduct(
 
 export async function updateProduct(
   token: string,
-  product: Product
+  product: Product & {
+    ptr?: number | null;
+    gst?: number | null;
+    discountType?: string | null;
+    discountValue?: number | null;
+    discountAmount?: number | null;
+    effectivePtr?: number | null;
+    buyQuantity?: number | null;
+    freeQuantity?: number | null;
+  }
 ) {
   const response = await request<any>(
     `/api/admin/products/${encodeURIComponent(
@@ -656,7 +703,10 @@ export async function updateProduct(
 
         countryOfOrigin: product.countryOfOrigin,
 
+        // SKU is kept internally for compatibility.
+        // Admin does not edit it.
         sku: product.sku,
+
         barcode: product.barcode,
 
         prescriptionRequired:
@@ -665,9 +715,26 @@ export async function updateProduct(
         image: product.image,
         description: product.description,
 
-        // Legacy compatibility fields
+        // ================================
+        // AUTOMATIC PRICING
+        // ================================
         mrp: product.mrp,
-        net: product.net,
+
+        discountType:
+          product.discountType || "NONE",
+
+        discountValue:
+          Number(product.discountValue) || 0,
+
+        buyQuantity:
+          Number(product.buyQuantity) || 0,
+
+        freeQuantity:
+          Number(product.freeQuantity) || 0,
+
+        // ================================
+        // LEGACY COMPATIBILITY
+        // ================================
         scheme: product.scheme,
         expiry: product.expiry,
         stock: product.stock,

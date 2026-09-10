@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "../context";
+import type { Product } from "../types";
 import { pageVariants, itemVariants, staggerContainer } from "../lib/motionVariants";
 /* =========================================================
    ICONS
@@ -227,9 +228,22 @@ export default function ProductDetail() {
      DATA
   ====================================================== */
 
-  const discPct = Math.round(
-    ((product.mrp - product.net) / product.mrp) * 100
-  );
+  const effectivePrice = (product: Product) =>
+    product.effectivePtr ?? product.net;
+
+  const currentPrice = effectivePrice(product);
+
+  const discPct =
+    product.mrp > 0
+      ? Math.max(
+          0,
+          Math.round(
+            ((Number(product.mrp) - currentPrice) /
+              Number(product.mrp)) *
+              100
+          )
+        )
+      : 0;
 
   const cartItem = cartItems.find(
     (item) => item.productId === product.id
@@ -600,7 +614,7 @@ export default function ProductDetail() {
                     }}
                   >
                     ₹
-                    {product.net.toLocaleString()}
+                    {effectivePrice(product).toLocaleString()}
                   </span>
 
                   <span className="text-lg text-[#9CA3AF] line-through">
@@ -716,7 +730,7 @@ export default function ProductDetail() {
                             : ""}{" "}
                           · ₹
                           {(
-                            product.net *
+                            effectivePrice(product) *
                             cartItem.quantity
                           ).toLocaleString()}
                         </p>
@@ -824,7 +838,7 @@ export default function ProductDetail() {
                       <span>
                         Add to Cart — ₹
                         {(
-                          product.net *
+                          effectivePrice(product) *
                           localQty
                         ).toLocaleString()}
                       </span>
@@ -1151,11 +1165,20 @@ export default function ProductDetail() {
               >
                 {similar.map(
                   (p, index) => {
-                    const disc = Math.round(
-                      ((p.mrp - p.net) /
-                        p.mrp) *
-                        100
-                    );
+                    const pCurrentPrice =
+                      p.effectivePtr ?? p.net;
+
+                    const disc =
+                      p.mrp > 0
+                        ? Math.max(
+                            0,
+                            Math.round(
+                              ((p.mrp - pCurrentPrice) /
+                                p.mrp) *
+                                100
+                            )
+                          )
+                        : 0;
 
                     return (
                       <motion.button
@@ -1206,7 +1229,7 @@ export default function ProductDetail() {
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-base font-extrabold text-[#1C1C1E]">
                             ₹
-                            {p.net.toLocaleString()}
+                            {pCurrentPrice.toLocaleString()}
                           </span>
 
                           <span className="text-xs text-[#9CA3AF] line-through">
@@ -1324,7 +1347,7 @@ export default function ProductDetail() {
 
                 Go to Cart · ₹
                 {(
-                  product.net *
+                  effectivePrice(product) *
                   cartItem.quantity
                 ).toLocaleString()}
               </motion.button>
@@ -1383,7 +1406,7 @@ export default function ProductDetail() {
 
                 Add to Cart · ₹
                 {(
-                  product.net *
+                  effectivePrice(product) *
                   localQty
                 ).toLocaleString()}
               </motion.button>

@@ -1,0 +1,19 @@
+-- CreateEnum
+CREATE TYPE "DiscountType" AS ENUM ('NONE', 'DISCOUNT_ON_PTR', 'SAME_PRODUCT_BONUS', 'DIFFERENT_PRODUCT_BONUS', 'SAME_PRODUCT_BONUS_AND_DISCOUNT', 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT');
+
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN     "cancelledAt" TIMESTAMP(3),
+ADD COLUMN     "stockDeductedAt" TIMESTAMP(3),
+ADD COLUMN     "stockRestoredAt" TIMESTAMP(3);
+
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "bonusProductId" TEXT,
+ADD COLUMN     "buyQuantity" INTEGER,
+ADD COLUMN     "discountAmount" DECIMAL(10,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "discountType" "DiscountType" NOT NULL DEFAULT 'NONE',
+ADD COLUMN     "discountValue" DECIMAL(10,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "effectivePtr" DECIMAL(10,2),
+ADD COLUMN     "freeQuantity" INTEGER,
+ADD COLUMN     "gst" DECIMAL(5,2) DEFAULT 5,
+ADD COLUMN     "ptr" DECIMAL(10,2);
+

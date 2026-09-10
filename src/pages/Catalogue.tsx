@@ -4,14 +4,22 @@ import type { Category, Product } from '../types';
 
 const CATEGORIES: (Category | 'All')[] = ['All', 'Tablets', 'Syrups', 'Injections', 'Eye Drops', 'Topical'];
 
+// Customer-facing wholesale price. Prefer the new automatic Effective PTR;
+// fall back to legacy net for older API records.
+function effectivePrice(product: Product) {
+  const value = (product as Product & { effectivePtr?: number | null }).effectivePtr;
+  return Number.isFinite(Number(value)) ? Number(value) : Number(product.net || 0);
+}
+
+
 function GreenBlob({ className }: { className?: string }) {
   return (
     <div className={`absolute pointer-events-none rounded-full bg-gradient-to-br from-[#0D9A55]/20 to-[#12B060]/5 blur-3xl ${className}`} />
   );
 }
 
-function DiscountBadge({ mrp, net }: { mrp: number; net: number }) {
-  const pct = Math.round(((mrp - net) / mrp) * 100);
+function DiscountBadge({ mrp, price }: { mrp: number; price: number }) {
+  const pct = mrp > 0 ? Math.max(0, Math.round(((mrp - price) / mrp) * 100)) : 0;
   return (
     <span className="inline-flex items-center px-2 py-0.5 bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold rounded-lg">
       {pct}% off
@@ -20,25 +28,88 @@ function DiscountBadge({ mrp, net }: { mrp: number; net: number }) {
 }
 
 function ProductCard({ product }: { product: Product }) {
-  const { cartItems, addToCart, updateQty, addToast, navigateToProduct } = useApp();
-  const cartItem = cartItems.find(i => i.productId === product.id);
+  const {
+    cartItems,
+    addToCart,
+    updateQty,
+    addToast,
+    navigateToProduct,
+  } = useApp();
+
+  const cartItem = cartItems.find(
+    (i) => i.productId === product.id
+  );
+
   const [localQty, setLocalQty] = useState(1);
 
-  const discountPct = Math.round(((product.mrp - product.net) / product.mrp) * 100);
+  const discountPct = effectivePrice(product) < Number(product.mrp)
+    ? Math.max(0, Math.round(((Number(product.mrp) - effectivePrice(product)) / Number(product.mrp)) * 100))
+    : 0;
+
+  const handleLocalQtyChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = e.target.value;
+
+    if (value === "") {
+      setLocalQty(1);
+      return;
+    }
+
+    const numericValue = Number(value);
+
+    if (Number.isFinite(numericValue)) {
+      setLocalQty(Math.max(1, Math.floor(numericValue)));
+    }
+  };
 
   const handleAdd = () => {
-    addToCart(product.id, localQty);
-    addToast(`${product.name} added to cart`);
+    const quantity = Math.max(1, localQty);
+
+    addToCart(product.id, quantity);
+
+    addToast(
+      `${product.name} × ${quantity} added to cart`
+    );
+
     setLocalQty(1);
+  };
+
+  const handleCartQtyChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = e.target.value;
+
+    if (value === "") {
+      updateQty(product.id, 1);
+      return;
+    }
+
+    const numericValue = Number(value);
+
+    if (Number.isFinite(numericValue)) {
+      updateQty(
+        product.id,
+        Math.max(1, Math.floor(numericValue))
+      );
+    }
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden group">
       <div className="p-4 flex-1 flex flex-col">
+
         {/* Badges row */}
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <span className="px-2 py-0.5 bg-[#F5F7F5] text-[#6B7280] text-[10px] font-semibold rounded-lg uppercase tracking-wide">{product.category}</span>
-          <DiscountBadge mrp={product.mrp} net={product.net} />
+          <span className="px-2 py-0.5 bg-[#F5F7F5] text-[#6B7280] text-[10px] font-semibold rounded-lg uppercase tracking-wide">
+            {product.category}
+          </span>
+
+          <DiscountBadge
+            mrp={product.mrp}
+            price={effectivePrice(product)}
+          />
+
           {product.scheme && (
             <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-lg border border-amber-200">
               🎁 {product.scheme}
@@ -50,20 +121,54 @@ function ProductCard({ product }: { product: Product }) {
         <h3
           onClick={() => navigateToProduct(product.id)}
           className="font-bold text-[#1C1C1E] text-base leading-tight mb-1 hover:text-[#0D9A55] cursor-pointer transition-colors"
-          style={{ fontFamily: "'DM Sans', sans-serif" }}
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+          }}
         >
           {product.name}
         </h3>
-        <p className="text-xs font-semibold text-[#0D9A55] mb-0.5">{product.company}</p>
-        <p className="text-xs text-[#6B7280] leading-relaxed mb-1 line-clamp-2">{product.composition}</p>
 
+        <p className="text-xs font-semibold text-[#0D9A55] mb-0.5">
+          {product.company}
+        </p>
+
+        <p className="text-xs text-[#6B7280] leading-relaxed mb-1 line-clamp-2">
+          {product.composition}
+        </p>
+
+        {/* Pack / Expiry */}
         <div className="flex items-center gap-3 text-xs text-[#6B7280] mb-3">
           <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375a1.125 1.125 0 00-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+              />
+            </svg>
             {product.pack}
           </span>
+
           <span className="flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25A2.25 2.25 0 0118.75 21H5.25A2.25 2.25 0 013 18.75Zm0 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
+              />
+            </svg>
             Exp: {product.expiry}
           </span>
         </div>
@@ -71,48 +176,161 @@ function ProductCard({ product }: { product: Product }) {
         {/* Pricing */}
         <div className="flex items-end gap-2 mb-4">
           <div>
-            <p className="text-xs text-[#6B7280]">Net Rate</p>
-            <p className="text-xl font-bold text-[#1C1C1E]" style={{ fontFamily: "'DM Sans', sans-serif" }}>₹{product.net}</p>
+            <p className="text-xs text-[#6B7280]">
+              Net Rate
+            </p>
+
+            <p
+              className="text-xl font-bold text-[#1C1C1E]"
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              ₹{effectivePrice(product)}
+            </p>
           </div>
-          <p className="text-sm text-[#6B7280] line-through mb-0.5">₹{product.mrp}</p>
-          <p className="text-xs text-[#6B7280] mb-0.5">MRP</p>
+
+          <p className="text-sm text-[#6B7280] line-through mb-0.5">
+            ₹{product.mrp}
+          </p>
+
+          <p className="text-xs text-[#6B7280] mb-0.5">
+            MRP
+          </p>
         </div>
 
         {/* Actions */}
         <div className="mt-auto">
+
           {cartItem ? (
-            <div className="flex items-center justify-between bg-[#E8F5EE] rounded-xl px-3 py-2">
-              <button
-                onClick={() => updateQty(product.id, cartItem.quantity - 1)}
-                className="w-6 h-6 flex items-center justify-center text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg leading-none"
-              >−</button>
-              <span className="text-sm font-bold text-[#0D9A55]">In Cart · {cartItem.quantity}</span>
-              <button
-                onClick={() => updateQty(product.id, cartItem.quantity + 1)}
-                className="w-6 h-6 flex items-center justify-center text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg leading-none"
-              >+</button>
+            /* =========================
+               ALREADY IN CART
+            ========================== */
+            <div className="rounded-xl bg-[#E8F5EE] p-2.5">
+
+              <div className="flex items-center gap-2">
+
+                <button
+                  onClick={() =>
+                    updateQty(
+                      product.id,
+                      cartItem.quantity - 1
+                    )
+                  }
+                  className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"
+                >
+                  −
+                </button>
+
+                <input
+                  type="number"
+                  min={1}
+                  value={cartItem.quantity}
+                  onChange={handleCartQtyChange}
+                  className="w-16 h-8 text-center bg-white border border-[#0D9A55]/20 rounded-lg text-sm font-bold text-[#0D9A55] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30"
+                />
+
+                <button
+                  onClick={() =>
+                    updateQty(
+                      product.id,
+                      cartItem.quantity + 1
+                    )
+                  }
+                  className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"
+                >
+                  +
+                </button>
+
+              </div>
+
+              <div className="flex items-center justify-between mt-2 px-1">
+                <span className="text-[11px] font-bold text-[#0D9A55]">
+                  In Cart
+                </span>
+
+                <span className="text-[11px] text-[#6B7280]">
+                  ₹{(
+                    effectivePrice(product) * cartItem.quantity
+                  ).toLocaleString()} total
+                </span>
+              </div>
+
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-[#F5F7F5] rounded-xl border border-black/[0.06]">
+            /* =========================
+               NOT IN CART
+            ========================== */
+            <div>
+
+              <div className="flex items-center gap-2">
+
+                {/* Minus */}
                 <button
-                  onClick={() => setLocalQty(q => Math.max(1, q - 1))}
-                  className="w-8 h-8 flex items-center justify-center text-[#6B7280] hover:text-[#0D9A55] transition-colors font-bold"
-                >−</button>
-                <span className="w-7 text-center text-sm font-semibold">{localQty}</span>
+                  onClick={() =>
+                    setLocalQty((q) =>
+                      Math.max(1, q - 1)
+                    )
+                  }
+                  className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
+                >
+                  −
+                </button>
+
+                {/* Editable quantity */}
+                <input
+                  type="number"
+                  min={1}
+                  value={localQty}
+                  onChange={handleLocalQtyChange}
+                  aria-label={`Quantity for ${product.name}`}
+                  className="w-16 h-9 text-center bg-[#F5F7F5] border border-black/[0.08] rounded-xl text-sm font-bold text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30 focus:border-[#0D9A55]"
+                />
+
+                {/* Plus */}
                 <button
-                  onClick={() => setLocalQty(q => q + 1)}
-                  className="w-8 h-8 flex items-center justify-center text-[#6B7280] hover:text-[#0D9A55] transition-colors font-bold"
-                >+</button>
+                  onClick={() =>
+                    setLocalQty((q) => q + 1)
+                  }
+                  className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
+                >
+                  +
+                </button>
+
+                {/* Add */}
+                <button
+                  onClick={handleAdd}
+                  className="flex-1 min-w-0 h-9 bg-[#0D9A55] text-white text-sm font-semibold rounded-xl hover:bg-[#0A7A43] active:scale-95 transition-all duration-150 shadow-[0_2px_8px_rgba(13,154,85,0.25)]"
+                >
+                  Add to Cart
+                </button>
+
               </div>
-              <button
-                onClick={handleAdd}
-                className="flex-1 py-2 bg-[#0D9A55] text-white text-sm font-semibold rounded-xl hover:bg-[#0A7A43] active:scale-95 transition-all duration-150 shadow-[0_2px_8px_rgba(13,154,85,0.25)]"
-              >
-                Add to Cart
-              </button>
+
+              {/* Quick quantity buttons */}
+              {/* <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-[10px] text-[#9CA3AF] mr-0.5">
+                  Quick:
+                </span>
+
+                {[10, 25, 50, 100].map((qty) => (
+                  <button
+                    key={qty}
+                    onClick={() => setLocalQty(qty)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                      localQty === qty
+                        ? "bg-[#0D9A55] text-white"
+                        : "bg-[#F5F7F5] text-[#6B7280] hover:bg-[#E8F5EE] hover:text-[#0D9A55]"
+                    }`}
+                  >
+                    {qty}
+                  </button>
+                ))}
+              </div> */}
+
             </div>
           )}
+
         </div>
       </div>
     </div>
