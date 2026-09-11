@@ -99,7 +99,7 @@ export default function Navbar() {
   className="flex h-20 w-14 items-center justify-center overflow-hidden rounded-xl"
 >
   <img
-    src="/logo.PNG"
+    src="/logo.png"
     alt="Singh Medical"
     className="h-full w-full object-contain"
   />
