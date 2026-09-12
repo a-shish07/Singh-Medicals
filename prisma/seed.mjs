@@ -35,7 +35,7 @@ async function main() {
   pack: product.pack,
   mrp: product.mrp,
   net: product.net,
-  scheme: product.scheme || null,
+  // scheme: product.scheme || null,
   expiry: new Date(`1 ${product.expiry}`),
   stock: 100,
   isActive: true,
