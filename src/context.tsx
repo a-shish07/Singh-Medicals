@@ -9,7 +9,6 @@ import {
 
 import type { ReactNode } from "react";
 
-import { MOCK_ORDERS, PRODUCTS as SEED_PRODUCTS } from "./data";
 import {
   adminLogin as apiAdminLogin,
   createAdminProduct as apiCreateAdminProduct,
@@ -250,9 +249,9 @@ export function AppProvider({
   useState<string | null>(null);
 
   const [products, setProducts] =
-    useState<Product[]>(SEED_PRODUCTS);
+  useState<Product[]>([]);
   const [orders, setOrders] =
-    useState<Order[]>(MOCK_ORDERS);
+    useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
  const [cartItems, setCartItems] =
@@ -311,22 +310,14 @@ export function AppProvider({
           return;
         }
 
-        setProducts(
-          bootstrap.products.length > 0
-            ? bootstrap.products
-            : SEED_PRODUCTS
-        );
-        setOrders(
-          bootstrap.orders.length > 0
-            ? bootstrap.orders
-            : MOCK_ORDERS
-        );
+        setProducts(bootstrap.products || []);
+setOrders(bootstrap.orders || []);
       } catch {
-        if (!cancelled) {
-          setProducts(SEED_PRODUCTS);
-          setOrders(MOCK_ORDERS);
-        }
-      }
+  if (!cancelled) {
+    setProducts([]);
+    setOrders([]);
+  }
+}
     }
 
     hydrate();
@@ -512,21 +503,154 @@ export function AppProvider({
     );
   }, []);
 
+   const getFreeQuantity = useCallback(
+    (product: Product, paidQuantity: number) => {
+      const type = String(
+        (product as Product & {
+          discountType?: string | null;
+        }).discountType || "NONE"
+      );
+
+      const buyQuantity = Number(
+        (product as Product & {
+          buyQuantity?: number | null;
+        }).buyQuantity || 0
+      );
+
+      const freeQuantity = Number(
+        (product as Product & {
+          freeQuantity?: number | null;
+        }).freeQuantity || 0
+      );
+
+      const isSameProductBonus =
+        type === "SAME_PRODUCT_BONUS" ||
+        type === "SAME_PRODUCT_BONUS_AND_DISCOUNT";
+
+      if (
+        !isSameProductBonus ||
+        buyQuantity <= 0 ||
+        freeQuantity <= 0 ||
+        paidQuantity <= 0
+      ) {
+        return 0;
+      }
+
+      return (
+        Math.floor(paidQuantity / buyQuantity) *
+        freeQuantity
+      );
+    },
+    []
+  );
+
+  const getMaxPaidQuantity = useCallback(
+    (product: Product) => {
+      const stock = Math.max(
+        0,
+        Math.floor(Number(product.stock || 0))
+      );
+
+      if (stock <= 0) {
+        return 0;
+      }
+
+      const discountType = String(
+        (product as Product & {
+          discountType?: string | null;
+        }).discountType || "NONE"
+      );
+
+      const hasSameProductBonus =
+        discountType === "SAME_PRODUCT_BONUS" ||
+        discountType ===
+          "SAME_PRODUCT_BONUS_AND_DISCOUNT";
+
+      if (!hasSameProductBonus) {
+        return stock;
+      }
+
+      let low = 0;
+      let high = stock;
+
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+
+        const free = getFreeQuantity(product, mid);
+        const physicalQuantity = mid + free;
+
+        if (physicalQuantity <= stock) {
+          low = mid;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      return low;
+    },
+    [getFreeQuantity]
+  );
+
   const addToCart = useCallback(
     (productId: string, qty = 1) => {
-      const quantity = Math.max(1, qty);
+      const product = products.find(
+        (item) => item.id === productId
+      );
+
+      if (!product) {
+        addToast("Product is no longer available.", "error");
+        return;
+      }
+
+      const maxPaidQuantity =
+        getMaxPaidQuantity(product);
+
+      if (maxPaidQuantity <= 0) {
+        addToast(
+          `${product.name} is out of stock.`,
+          "error"
+        );
+        return;
+      }
+
+      const requestedQuantity = Math.max(
+        1,
+        Math.floor(Number(qty) || 1)
+      );
 
       setCartItems((prev) => {
         const existing = prev.find(
           (item) => item.productId === productId
         );
 
+        const currentQuantity = existing?.quantity || 0;
+
+        const nextQuantity = Math.min(
+          currentQuantity + requestedQuantity,
+          maxPaidQuantity
+        );
+
+        if (nextQuantity <= 0) {
+          return prev;
+        }
+
         if (existing) {
+          if (nextQuantity === currentQuantity) {
+            addToast(
+              `Only ${maxPaidQuantity} paid unit${
+                maxPaidQuantity === 1 ? "" : "s"
+              } available.`,
+              "info"
+            );
+
+            return prev;
+          }
+
           return prev.map((item) =>
             item.productId === productId
               ? {
                   ...item,
-                  quantity: item.quantity + quantity,
+                  quantity: nextQuantity,
                 }
               : item
           );
@@ -536,12 +660,19 @@ export function AppProvider({
           ...prev,
           {
             productId,
-            quantity,
+            quantity: Math.min(
+              requestedQuantity,
+              maxPaidQuantity
+            ),
           },
         ];
       });
     },
-    []
+    [
+      addToast,
+      getMaxPaidQuantity,
+      products,
+    ]
   );
 
   const removeFromCart = useCallback((productId: string) => {
@@ -552,10 +683,37 @@ export function AppProvider({
 
   const updateQty = useCallback(
     (productId: string, qty: number) => {
-      if (qty <= 0) {
-        setCartItems((prev) =>
-          prev.filter((item) => item.productId !== productId)
-        );
+      const product = products.find(
+        (item) => item.id === productId
+      );
+
+      if (!product) {
+        removeFromCart(productId);
+        return;
+      }
+
+      const requestedQuantity = Math.floor(
+        Number(qty)
+      );
+
+      if (
+        !Number.isFinite(requestedQuantity) ||
+        requestedQuantity <= 0
+      ) {
+        removeFromCart(productId);
+        return;
+      }
+
+      const maxPaidQuantity =
+        getMaxPaidQuantity(product);
+
+      const nextQuantity = Math.min(
+        requestedQuantity,
+        maxPaidQuantity
+      );
+
+      if (nextQuantity <= 0) {
+        removeFromCart(productId);
         return;
       }
 
@@ -564,14 +722,19 @@ export function AppProvider({
           item.productId === productId
             ? {
                 ...item,
-                quantity: qty,
+                quantity: nextQuantity,
               }
             : item
         )
       );
     },
-    []
+    [
+      getMaxPaidQuantity,
+      products,
+      removeFromCart,
+    ]
   );
+
 
   const clearCart = useCallback(() => {
     setCartItems([]);
@@ -775,11 +938,9 @@ const saveCustomerProfile = useCallback(
   );
 
   const refreshProducts = useCallback(async () => {
-    const response = await loadBootstrap();
-    if (response.products?.length) {
-      setProducts(response.products);
-    }
-  }, []);
+  const response = await loadBootstrap();
+  setProducts(response.products || []);
+}, []);
 
   const refreshOrders = useCallback(async () => {
     if (!customerToken) { setOrders([]); return; }

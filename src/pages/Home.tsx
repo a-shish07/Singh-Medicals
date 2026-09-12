@@ -1,10 +1,14 @@
-
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useApp } from "../context";
 import { PRODUCTS } from "../data";
 import type { Category } from "../types";
-import { fadeUp, fadeLeft, fadeRight, staggerContainer } from "../lib/motionVariants";
+import {
+  fadeUp,
+  fadeLeft,
+  fadeRight,
+  staggerContainer,
+} from "../lib/motionVariants";
 
 /* =========================================================
    DATA
@@ -66,14 +70,7 @@ const CATEGORIES: {
           fill="#0D9A55"
           opacity="0.15"
         />
-        <rect
-          x="4"
-          y="10"
-          width="12"
-          height="12"
-          rx="6"
-          fill="#0D9A55"
-        />
+        <rect x="4" y="10" width="12" height="12" rx="6" fill="#0D9A55" />
         <rect
           x="16"
           y="10"
@@ -92,11 +89,7 @@ const CATEGORIES: {
     color: "from-blue-50 to-cyan-100",
     icon: (
       <svg viewBox="0 0 32 32" fill="none" className="h-8 w-8">
-        <path
-          d="M11 6h10l2 4H9l2-4z"
-          fill="#0D9A55"
-          opacity="0.5"
-        />
+        <path d="M11 6h10l2 4H9l2-4z" fill="#0D9A55" opacity="0.5" />
         <rect
           x="9"
           y="10"
@@ -124,11 +117,7 @@ const CATEGORIES: {
     color: "from-purple-50 to-violet-100",
     icon: (
       <svg viewBox="0 0 32 32" fill="none" className="h-8 w-8">
-        <path
-          d="M6 26L18 14l3 3L9 29 6 26z"
-          fill="#0D9A55"
-          opacity="0.4"
-        />
+        <path d="M6 26L18 14l3 3L9 29 6 26z" fill="#0D9A55" opacity="0.4" />
         <rect
           x="16"
           y="6"
@@ -138,13 +127,7 @@ const CATEGORIES: {
           transform="rotate(45 16 6)"
           fill="#0D9A55"
         />
-        <circle
-          cx="24"
-          cy="8"
-          r="3"
-          fill="#0D9A55"
-          opacity="0.3"
-        />
+        <circle cx="24" cy="8" r="3" fill="#0D9A55" opacity="0.3" />
       </svg>
     ),
   },
@@ -154,21 +137,8 @@ const CATEGORIES: {
     color: "from-amber-50 to-orange-100",
     icon: (
       <svg viewBox="0 0 32 32" fill="none" className="h-8 w-8">
-        <ellipse
-          cx="16"
-          cy="16"
-          rx="12"
-          ry="8"
-          fill="#0D9A55"
-          opacity="0.15"
-        />
-        <circle
-          cx="16"
-          cy="16"
-          r="5"
-          fill="#0D9A55"
-          opacity="0.4"
-        />
+        <ellipse cx="16" cy="16" rx="12" ry="8" fill="#0D9A55" opacity="0.15" />
+        <circle cx="16" cy="16" r="5" fill="#0D9A55" opacity="0.4" />
         <circle cx="16" cy="16" r="2.5" fill="#0D9A55" />
         <path
           d="M16 6v4M16 22v4M6 16h4M22 16h4"
@@ -207,9 +177,7 @@ const FAQ_ITEMS = [
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg
-      className={`h-4 w-4 ${
-        filled ? "text-amber-400" : "text-gray-200"
-      }`}
+      className={`h-4 w-4 ${filled ? "text-amber-400" : "text-gray-200"}`}
       viewBox="0 0 20 20"
       fill="currentColor"
     >
@@ -222,16 +190,10 @@ function StarIcon({ filled }: { filled: boolean }) {
    MINI PRODUCT CARD
 ========================================================= */
 
-function MiniProductCard({
-  product,
-}: {
-  product: (typeof PRODUCTS)[0];
-}) {
+function MiniProductCard({ product }: { product: (typeof PRODUCTS)[0] }) {
   const { navigateToProduct } = useApp();
 
-  const disc = Math.round(
-    ((product.mrp - product.net) / product.mrp) * 100
-  );
+  const disc = Math.round(((product.mrp - product.net) / product.mrp) * 100);
 
   return (
     <motion.button
@@ -271,8 +233,6 @@ function MiniProductCard({
             />
           </svg>
         </motion.div>
-
-       
       </div>
 
       <p className="mb-0.5 line-clamp-2 text-sm font-bold leading-snug text-[#1C1C1E]">
@@ -304,13 +264,7 @@ function MiniProductCard({
    ACCORDION
 ========================================================= */
 
-function AccordionItem({
-  q,
-  a,
-}: {
-  q: string;
-  a: string;
-}) {
+function AccordionItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -366,9 +320,7 @@ function AccordionItem({
         }}
         className="overflow-hidden"
       >
-        <p className="pb-5 text-sm leading-6 text-[#6B7280]">
-          {a}
-        </p>
+        <p className="pb-5 text-sm leading-6 text-[#6B7280]">{a}</p>
       </motion.div>
     </div>
   );
@@ -381,20 +333,18 @@ function AccordionItem({
 export default function Home() {
   const { navigate } = useApp();
 
-  const featured = PRODUCTS.filter(
-    (p) =>
-      (p.mrp - p.net) / p.mrp > 0.25
-  ).slice(0, 8);
+  const featured = PRODUCTS.filter((p) => (p.mrp - p.net) / p.mrp > 0.25).slice(
+    0,
+    8,
+  );
 
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8FAF8]">
-
       {/* =====================================================
           HERO
       ====================================================== */}
 
       <section className="relative overflow-hidden bg-white">
-
         {/* Animated background */}
         <div className="pointer-events-none absolute inset-0">
           <motion.div
@@ -446,14 +396,12 @@ export default function Home() {
 
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
           <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
-
             {/* LEFT */}
             <motion.div
               initial="hidden"
               animate="visible"
               variants={staggerContainer}
             >
-
               {/* Badge */}
               <motion.div variants={fadeUp}>
                 <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#0D9A55]/10 bg-[#E8F5EE] px-4 py-2 shadow-sm">
@@ -501,8 +449,8 @@ export default function Home() {
                 variants={fadeUp}
                 className="mb-8 max-w-xl text-base leading-7 text-[#6B7280] sm:text-lg"
               >
-                Direct wholesale rates for registered pharmacies across
-                Eastern UP.{" "}
+                Direct wholesale rates for registered pharmacies across Eastern
+                UP.{" "}
                 <span className="font-semibold text-[#374151]">
                   500+ products
                 </span>
@@ -526,7 +474,6 @@ export default function Home() {
                   className="group flex items-center justify-center gap-2 rounded-2xl bg-[#0D9A55] px-7 py-3.5 text-sm font-bold text-white shadow-[0_7px_25px_rgba(13,154,85,0.30)] transition-shadow duration-300 hover:shadow-[0_12px_35px_rgba(13,154,85,0.42)]"
                 >
                   Browse Catalogue
-
                   <svg
                     className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
                     fill="none"
@@ -543,7 +490,7 @@ export default function Home() {
                 </motion.button>
 
                 <motion.a
-                  href="https://wa.me/919876543210?text=Hi%20Singh%20Medical%20Stores%2C%20I%20want%20to%20place%20a%20wholesale%20order."
+                  href="https://wa.me/918174958839?text=Hi%20Singh%20Medical%20Stores%2C%20I%20want%20to%20place%20a%20wholesale%20order."
                   target="_blank"
                   rel="noopener noreferrer"
                   whileHover={{
@@ -561,7 +508,6 @@ export default function Home() {
                   >
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.198.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
                   </svg>
-
                   Order via WhatsApp
                 </motion.a>
               </motion.div>
@@ -705,9 +651,7 @@ export default function Home() {
                     <p className="text-xs font-bold text-[#0D9A55]">
                       Order Placed
                     </p>
-                    <p className="text-[10px] text-[#9CA3AF]">
-                      ORD-2024-108
-                    </p>
+                    <p className="text-[10px] text-[#9CA3AF]">ORD-2024-108</p>
                   </div>
 
                   <span className="ml-auto rounded-full bg-[#E8F5EE] px-2 py-1 text-[9px] font-bold text-[#0D9A55]">
@@ -725,9 +669,7 @@ export default function Home() {
                       key={name}
                       className="flex items-center justify-between"
                     >
-                      <span className="text-xs text-[#6B7280]">
-                        {name}
-                      </span>
+                      <span className="text-xs text-[#6B7280]">{name}</span>
                       <span className="text-xs font-bold text-[#374151]">
                         {qty}
                       </span>
@@ -779,9 +721,7 @@ export default function Home() {
                   <p className="text-xs font-bold text-[#1C1C1E]">
                     Same-day dispatch
                   </p>
-                  <p className="text-[10px] text-[#9CA3AF]">
-                    From Padrauna
-                  </p>
+                  <p className="text-[10px] text-[#9CA3AF]">From Padrauna</p>
                 </div>
               </motion.div>
 
@@ -902,9 +842,7 @@ export default function Home() {
             >
               Every category,
               <br />
-              <span className="text-[#0D9A55]">
-                wholesale rates.
-              </span>
+              <span className="text-[#0D9A55]">wholesale rates.</span>
             </h2>
 
             <button
@@ -980,7 +918,6 @@ export default function Home() {
 
               <div className="mt-5 flex items-center gap-1 text-xs font-bold text-[#0D9A55]">
                 Browse
-
                 <svg
                   className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1"
                   fill="none"
@@ -1029,8 +966,8 @@ export default function Home() {
             </h2>
 
             <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-[#6B7280]">
-              From finding the right medicine to getting it dispatched,
-              we keep wholesale ordering simple.
+              From finding the right medicine to getting it dispatched, we keep
+              wholesale ordering simple.
             </p>
           </motion.div>
 
@@ -1147,119 +1084,6 @@ export default function Home() {
       </section>
 
       {/* =====================================================
-          FEATURED PRODUCTS
-      ====================================================== */}
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{
-            once: true,
-          }}
-          variants={fadeUp}
-          className="mb-8 flex items-end justify-between gap-4"
-        >
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#0D9A55]">
-              Best Deals
-            </p>
-
-            <h2
-              className="text-3xl font-extrabold tracking-tight text-[#1C1C1E] sm:text-4xl"
-              style={{
-                fontFamily: "'DM Sans', sans-serif",
-              }}
-            >
-              Featured Products
-            </h2>
-
-            <p className="mt-2 text-sm text-[#6B7280]">
-              Popular medicines at competitive wholesale rates.
-            </p>
-          </div>
-
-          <button
-            onClick={() => navigate("catalogue")}
-            className="group hidden items-center gap-1 text-sm font-bold text-[#0D9A55] sm:flex"
-          >
-            View All
-
-            <svg
-              className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="m13.5 4.5 7.5 7.5m0 0-7.5 7.5M21 12H3"
-              />
-            </svg>
-          </button>
-        </motion.div>
-
-        <div
-          className="-mx-4 overflow-x-auto px-4 pb-5 sm:-mx-6 sm:px-6"
-          style={{
-            scrollbarWidth: "none",
-          }}
-        >
-          <motion.div
-            initial={{
-              opacity: 0,
-            }}
-            whileInView={{
-              opacity: 1,
-            }}
-            viewport={{
-              once: true,
-            }}
-            transition={{
-              duration: 0.6,
-            }}
-            className="flex gap-4"
-          >
-            {featured.map((p, index) => (
-              <motion.div
-                key={p.id}
-                initial={{
-                  opacity: 0,
-                  x: 25,
-                }}
-                whileInView={{
-                  opacity: 1,
-                  x: 0,
-                }}
-                viewport={{
-                  once: true,
-                }}
-                transition={{
-                  duration: 0.45,
-                  delay: index * 0.06,
-                }}
-              >
-                <MiniProductCard
-                  product={p}
-                />
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-
-        <div className="mt-2 text-center sm:hidden">
-          <button
-            onClick={() => navigate("catalogue")}
-            className="text-sm font-bold text-[#0D9A55]"
-          >
-            View all products →
-          </button>
-        </div>
-      </section>
-
-      {/* =====================================================
           TESTIMONIALS
       ====================================================== */}
 
@@ -1286,9 +1110,7 @@ export default function Home() {
             >
               Trusted by pharmacies
               <br />
-              <span className="text-[#0D9A55]">
-                across Eastern UP
-              </span>
+              <span className="text-[#0D9A55]">across Eastern UP</span>
             </h2>
           </motion.div>
 
@@ -1317,10 +1139,7 @@ export default function Home() {
                     {Array.from({
                       length: 5,
                     }).map((_, i) => (
-                      <StarIcon
-                        key={i}
-                        filled={i < t.stars}
-                      />
+                      <StarIcon key={i} filled={i < t.stars} />
                     ))}
                   </div>
 
@@ -1360,7 +1179,6 @@ export default function Home() {
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
-
           <motion.div
             initial="hidden"
             whileInView="visible"
@@ -1382,15 +1200,13 @@ export default function Home() {
             >
               The distributor that
               <br />
-              <span className="text-[#0D9A55]">
-                treats you like a partner.
-              </span>
+              <span className="text-[#0D9A55]">treats you like a partner.</span>
             </h2>
 
             <p className="mb-7 max-w-xl leading-7 text-[#6B7280]">
-              Since 1998, we have served retail pharmacies across
-              Kushinagar, Gorakhpur, Deoria, and surrounding districts
-              with genuine branded medicines at fair net rates.
+              Since 1998, we have served retail pharmacies across Kushinagar,
+              Gorakhpur, Deoria, and surrounding districts with genuine branded
+              medicines at fair net rates.
             </p>
 
             <motion.button
@@ -1401,7 +1217,6 @@ export default function Home() {
               className="group flex items-center gap-2 text-sm font-bold text-[#0D9A55]"
             >
               Discover Our Story
-
               <svg
                 className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
                 fill="none"
@@ -1472,9 +1287,7 @@ export default function Home() {
                   {v.title}
                 </h3>
 
-                <p className="text-xs leading-5 text-[#6B7280]">
-                  {v.desc}
-                </p>
+                <p className="text-xs leading-5 text-[#6B7280]">{v.desc}</p>
               </motion.div>
             ))}
           </motion.div>
@@ -1532,11 +1345,7 @@ export default function Home() {
             className="rounded-3xl border border-black/[0.05] bg-[#F8FAF8] px-5 shadow-[0_4px_20px_rgba(0,0,0,0.04)] sm:px-7"
           >
             {FAQ_ITEMS.map((item) => (
-              <AccordionItem
-                key={item.q}
-                q={item.q}
-                a={item.a}
-              />
+              <AccordionItem key={item.q} q={item.q} a={item.a} />
             ))}
           </motion.div>
 
@@ -1559,7 +1368,6 @@ export default function Home() {
       ====================================================== */}
 
       <section className="relative overflow-hidden bg-[#0D9A55]">
-
         {/* Decorative blobs */}
         <motion.div
           animate={{
@@ -1637,8 +1445,8 @@ export default function Home() {
               variants={fadeUp}
               className="mx-auto mb-8 max-w-xl text-sm leading-6 text-white/75 sm:text-base"
             >
-              Register your pharmacy today. Get access to exclusive net
-              rates, saved order history, and priority dispatch.
+              Register your pharmacy today. Get access to exclusive net rates,
+              saved order history, and priority dispatch.
             </motion.p>
 
             <motion.div
@@ -1657,7 +1465,6 @@ export default function Home() {
                 className="group flex items-center justify-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-sm font-bold text-[#0D9A55] shadow-[0_10px_30px_rgba(0,0,0,0.15)] transition-shadow duration-300 hover:shadow-[0_14px_35px_rgba(0,0,0,0.2)]"
               >
                 Login / Register
-
                 <svg
                   className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
                   fill="none"
