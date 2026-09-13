@@ -177,6 +177,28 @@ export default function ProductsTab() {
     setForm(current => ({ ...current, [key]: value }));
   };
 
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      addToast('Please select a valid image file.', 'error');
+      event.target.value = '';
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('Medicine image must be 5 MB or smaller.', 'error');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setField('image', String(reader.result));
+    reader.onerror = () => addToast('The medicine image could not be read.', 'error');
+    reader.readAsDataURL(file);
+  };
+
   const submitProduct = async () => {
     if (!form.name.trim() || !form.company.trim() || !form.composition.trim() || !form.category.trim() || !form.pack.trim()) {
       addToast('Product name, company, composition, category and pack size are required.', 'error');
@@ -383,6 +405,24 @@ const productFormModal = (adding || editing) ? (
                     <span className="text-xs font-bold text-slate-700">Description</span>
                     <textarea value={form.description} onChange={e => setField('description', e.target.value)} rows={3} placeholder="Optional medicine description" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none resize-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                   </label>
+                  <div className="sm:col-span-2">
+                    <span className="text-xs font-bold text-slate-700">Medicine Image</span>
+                    <div className="mt-1.5 flex flex-col sm:flex-row gap-3">
+                      <label className="inline-flex min-h-28 flex-1 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-center transition hover:border-blue-400 hover:bg-blue-50/50">
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageChange} className="sr-only" />
+                        <span>
+                          <span className="block text-sm font-bold text-slate-700">Choose medicine image</span>
+                          <span className="mt-1 block text-xs text-slate-500">PNG, JPG or WebP — maximum 5 MB</span>
+                        </span>
+                      </label>
+                      {form.image && (
+                        <div className="relative h-28 w-full overflow-hidden rounded-xl border border-slate-200 bg-white sm:w-36">
+                          <img src={form.image} alt="Medicine preview" className="h-full w-full object-contain p-2" />
+                          <button type="button" onClick={() => setField('image', '')} className="absolute right-1.5 top-1.5 rounded-lg bg-slate-900/75 px-2 py-1 text-[10px] font-bold text-white hover:bg-slate-900">Remove</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </section>
             </div>
