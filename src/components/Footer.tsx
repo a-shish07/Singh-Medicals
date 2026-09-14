@@ -29,7 +29,7 @@ export default function Footer() {
                 className="flex h-20 w-16 items-center justify-center bg-transparent"
               >
                 <img
-                  src="/logo.PNG"
+                  src="/logo.png"
                   alt="Singh Medical Stores"
                   className="h-full w-full object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)] rounded-4xl"
                 />
