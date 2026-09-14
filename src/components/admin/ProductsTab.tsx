@@ -3,6 +3,18 @@ import { useApp } from '../../context';
 import type { Product } from '../../types';
 import { Plus, X } from "lucide-react";
 
+function parseProductImages(image?: string) {
+  if (!image) return [];
+  try {
+    const parsed = JSON.parse(image);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string' && value.length > 0)
+      : [image];
+  } catch {
+    return [image];
+  }
+}
+
 export default function ProductsTab() {
   const { products, updateProduct, createProduct, addToast } = useApp();
 
@@ -177,26 +189,36 @@ export default function ProductsTab() {
     setForm(current => ({ ...current, [key]: value }));
   };
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    const currentImages = parseProductImages(form.image);
+    event.target.value = '';
 
-    if (!file.type.startsWith('image/')) {
-      addToast('Please select a valid image file.', 'error');
-      event.target.value = '';
+    if (!files.length) return;
+    if (currentImages.length + files.length > 4) {
+      addToast('You can add up to 4 medicine images.', 'error');
+      return;
+    }
+    if (files.some(file => !file.type.startsWith('image/'))) {
+      addToast('Please select valid image files.', 'error');
+      return;
+    }
+    if (files.some(file => file.size > 1.5 * 1024 * 1024)) {
+      addToast('Each medicine image must be 1.5 MB or smaller.', 'error');
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      addToast('Medicine image must be 5 MB or smaller.', 'error');
-      event.target.value = '';
-      return;
+    try {
+      const encodedImages = await Promise.all(files.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Image could not be read'));
+        reader.readAsDataURL(file);
+      })));
+      setField('image', JSON.stringify([...currentImages, ...encodedImages]));
+    } catch {
+      addToast('One or more medicine images could not be read.', 'error');
     }
-
-    const reader = new FileReader();
-    reader.onload = () => setField('image', String(reader.result));
-    reader.onerror = () => addToast('The medicine image could not be read.', 'error');
-    reader.readAsDataURL(file);
   };
 
   const submitProduct = async () => {
@@ -406,21 +428,21 @@ const productFormModal = (adding || editing) ? (
                     <textarea value={form.description} onChange={e => setField('description', e.target.value)} rows={3} placeholder="Optional medicine description" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none resize-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                   </label>
                   <div className="sm:col-span-2">
-                    <span className="text-xs font-bold text-slate-700">Medicine Image</span>
+                    <span className="text-xs font-bold text-slate-700">Medicine Images</span>
                     <div className="mt-1.5 flex flex-col sm:flex-row gap-3">
                       <label className="inline-flex min-h-28 flex-1 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-center transition hover:border-blue-400 hover:bg-blue-50/50">
-                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageChange} className="sr-only" />
+                        <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={event => void handleImageChange(event)} className="sr-only" />
                         <span>
-                          <span className="block text-sm font-bold text-slate-700">Choose medicine image</span>
+                          <span className="block text-sm font-bold text-slate-700">Choose medicine images</span>
                           <span className="mt-1 block text-xs text-slate-500">PNG, JPG or WebP — maximum 5 MB</span>
                         </span>
                       </label>
-                      {form.image && (
-                        <div className="relative h-28 w-full overflow-hidden rounded-xl border border-slate-200 bg-white sm:w-36">
-                          <img src={form.image} alt="Medicine preview" className="h-full w-full object-contain p-2" />
-                          <button type="button" onClick={() => setField('image', '')} className="absolute right-1.5 top-1.5 rounded-lg bg-slate-900/75 px-2 py-1 text-[10px] font-bold text-white hover:bg-slate-900">Remove</button>
+                      {parseProductImages(form.image).map((image, index) => (
+                        <div key={`${image.slice(0, 30)}-${index}`} className="relative h-28 w-full overflow-hidden rounded-xl border border-slate-200 bg-white sm:w-36">
+                          <img src={image} alt={`Medicine preview ${index + 1}`} className="h-full w-full object-contain p-2" />
+                          <button type="button" onClick={() => setField('image', JSON.stringify(parseProductImages(form.image).filter((_, imageIndex) => imageIndex !== index)))} className="absolute right-1.5 top-1.5 rounded-lg bg-slate-900/75 px-2 py-1 text-[10px] font-bold text-white hover:bg-slate-900">Remove</button>
                         </div>
-                      )}
+                      ))}
                     </div>
                   </div>
                 </div>

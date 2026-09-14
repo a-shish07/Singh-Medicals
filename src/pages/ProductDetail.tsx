@@ -4,6 +4,18 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "../context";
 import type { Product } from "../types";
 import { pageVariants, itemVariants, staggerContainer } from "../lib/motionVariants";
+
+function parseProductImages(image?: string) {
+  if (!image) return [];
+  try {
+    const parsed = JSON.parse(image);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string" && value.length > 0)
+      : [image];
+  } catch {
+    return [image];
+  }
+}
 /* =========================================================
    ICONS
 ========================================================= */
@@ -163,6 +175,7 @@ export default function ProductDetail() {
   );
 
   const [localQty, setLocalQty] = useState(1);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const [tab, setTab] = useState<
     "description" | "pack"
@@ -232,6 +245,8 @@ export default function ProductDetail() {
     product.effectivePtr ?? product.net;
 
   const currentPrice = effectivePrice(product);
+  const productImages = parseProductImages(product.image);
+  const activeImage = productImages[activeImageIndex] || productImages[0];
 
   const discPct =
     product.mrp > 0
@@ -426,13 +441,27 @@ export default function ProductDetail() {
                       scale: 1.05,
                       rotate: 2,
                     }}
-                    className="relative flex h-36 w-36 items-center justify-center rounded-[2rem] border border-black/[0.04] bg-white shadow-[0_15px_45px_rgba(0,0,0,0.10)] sm:h-44 sm:w-44"
+                    className="relative flex h-64 w-64 items-center justify-center rounded-[2rem] border border-black/[0.04] bg-white shadow-[0_15px_45px_rgba(0,0,0,0.10)] sm:h-[28rem] sm:w-[28rem]"
                   >
-                    <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-[#E8F5EE] sm:h-28 sm:w-28">
-                      <MedicineIcon />
-                    </div>
+                    {activeImage ? (
+                      <img src={activeImage} alt={product.name} className="h-full w-full rounded-[2rem] object-contain p-4 sm:p-5" />
+                    ) : (
+                      <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-[#E8F5EE] sm:h-28 sm:w-28">
+                        <MedicineIcon />
+                      </div>
+                    )}
                   </motion.div>
                 </motion.div>
+
+                {productImages.length > 1 && (
+                  <div className="absolute bottom-5 left-5 flex max-w-[65%] gap-2 overflow-x-auto rounded-xl bg-white/80 p-2 shadow-sm backdrop-blur-sm">
+                    {productImages.map((image, index) => (
+                      <button key={`${image.slice(0, 30)}-${index}`} type="button" onClick={() => setActiveImageIndex(index)} className={`h-11 w-11 shrink-0 overflow-hidden rounded-lg border-2 ${activeImage === image ? "border-[#0D9A55]" : "border-transparent"}`} aria-label={`View image ${index + 1}`}>
+                        <img src={image} alt="" className="h-full w-full object-contain bg-white" />
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                
 

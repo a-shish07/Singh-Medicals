@@ -74,7 +74,6 @@ function ProductCard({ product }: { product: ProductPricing }) {
   );
 
   const [localQty, setLocalQty] = useState(1);
-  const [imageFailed, setImageFailed] = useState(false);
 
   const price = effectivePrice(product);
   const offer = offerLabel(product);
@@ -130,25 +129,6 @@ function ProductCard({ product }: { product: ProductPricing }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden group">
-      <button
-        type="button"
-        onClick={() => navigateToProduct(product.id)}
-        className="h-40 w-full overflow-hidden bg-gradient-to-br from-[#F5F7F5] to-[#E8F5EE] p-3"
-        aria-label={`View ${product.name}`}
-      >
-        {product.image && !imageFailed ? (
-          <img
-            src={product.image}
-            alt={product.name}
-            onError={() => setImageFailed(true)}
-            className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center rounded-xl border border-dashed border-[#0D9A55]/20 bg-white/60 text-4xl" aria-hidden="true">
-            💊
-          </div>
-        )}
-      </button>
       <div className="p-4 flex-1 flex flex-col">
 
         {/* Badges row */}
