@@ -162,6 +162,8 @@ function orderFromApi(order: any): Order {
 
     paymentMethod:
       order.paymentMethod || "COD",
+    deliveryPartner: order.deliveryPartner || null,
+    trackingId: order.trackingId || null,
   };
 }
 
@@ -544,7 +546,9 @@ export async function loadAdminOrders(
 export async function updateOrderStatus(
   token: string,
   orderId: string,
-  status: OrderStatus
+  status: OrderStatus,
+  trackingId?: string,
+  deliveryPartner?: string
 ) {
   const response = await request<any>(
     `/api/admin/orders/${encodeURIComponent(
@@ -559,6 +563,8 @@ export async function updateOrderStatus(
 
       body: JSON.stringify({
         status: status.toUpperCase(),
+        trackingId,
+        deliveryPartner,
       }),
     }
   );
@@ -566,6 +572,17 @@ export async function updateOrderStatus(
   return {
     order: orderFromApi(response),
   };
+}
+
+export async function submitContactQuery(payload: {
+  name: string;
+  phone: string;
+  message: string;
+}) {
+  return request<{ ok: boolean }>("/api/contact", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 /* =========================================================

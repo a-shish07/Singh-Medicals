@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "../context";
+import { submitContactQuery } from "../lib/api";
 
 export default function Contact() {
   const { addToast } = useApp();
@@ -13,16 +14,20 @@ export default function Contact() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    setSubmitted(true);
-
-    addToast(
-      "Message sent! We will get back to you shortly.",
-      "success"
-    );
+    try {
+      setSending(true);
+      await submitContactQuery(form);
+      setSubmitted(true);
+      addToast("Message sent! We will get back to you shortly.", "success");
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : "Could not send your message. Please try again.", "error");
+    } finally {
+      setSending(false);
+    }
   };
 
   const contactDetails = [
@@ -875,6 +880,7 @@ export default function Contact() {
                       {/* Submit */}
                       <motion.button
                         type="submit"
+                        disabled={sending}
                         whileHover={{
                           y: -2,
                           scale: 1.01,
@@ -882,13 +888,13 @@ export default function Contact() {
                         whileTap={{
                           scale: 0.98,
                         }}
-                        className="group relative mt-1 flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#0D9A55] py-3.5 text-sm font-bold text-white shadow-[0_8px_20px_rgba(13,154,85,0.2)] transition-all duration-300 hover:bg-[#0A7A43] hover:shadow-[0_12px_28px_rgba(13,154,85,0.25)]"
+                        className="group relative mt-1 flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#0D9A55] py-3.5 text-sm font-bold text-white shadow-[0_8px_20px_rgba(13,154,85,0.2)] transition-all duration-300 hover:bg-[#0A7A43] hover:shadow-[0_12px_28px_rgba(13,154,85,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {/* Shine */}
                         <span className="absolute inset-y-0 -left-20 w-12 skew-x-[-20deg] bg-white/20 transition-all duration-700 group-hover:left-[110%]" />
 
                         <span className="relative">
-                          Send Message
+                          {sending ? "Sending..." : "Send Message"}
                         </span>
 
                         <svg
@@ -1063,4 +1069,3 @@ export default function Contact() {
     </div>
   );
 }
-

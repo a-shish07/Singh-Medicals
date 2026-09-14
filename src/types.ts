@@ -79,6 +79,8 @@ export interface Order {
   total: number;
   status: OrderStatus;
   paymentMethod: 'COD';
+  deliveryPartner?: string | null;
+  trackingId?: string | null;
 }
 
 export interface ToastMsg {

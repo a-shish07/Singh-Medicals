@@ -4,6 +4,7 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import nodemailer from 'nodemailer';
 import { parse } from 'csv-parse/sync';
 import prismaPackage from '@prisma/client';
 
@@ -385,6 +386,45 @@ const parseDate = (value) => {
 const cleanString = (value) =>
   String(value ?? '').trim();
 
+const escapeHtml = (value) => cleanString(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
+const mailer = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    })
+  : null;
+const mailFrom = process.env.SMTP_FROM || process.env.SMTP_USER;
+const adminMail = process.env.ORDER_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL;
+
+const sendMail = async (message) => {
+  if (!mailer || !mailFrom) {
+    console.warn('Email not sent: SMTP is not configured.');
+    return;
+  }
+  await mailer.sendMail({ from: mailFrom, ...message });
+};
+
+const orderLinesHtml = (order) => (order.items || []).map((item) =>
+  `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeHtml(item.productName)}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">${item.quantity}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">₹${Number(item.unitPrice).toFixed(2)}</td></tr>`
+).join('');
+
+const sendOrderEmails = async (order, customer) => {
+  const total = Number(order.subtotal).toFixed(2);
+  const details = `<table style="width:100%;border-collapse:collapse"><thead><tr><th align="left" style="padding:8px">Medicine</th><th style="padding:8px">Qty</th><th align="right" style="padding:8px">Rate</th></tr></thead><tbody>${orderLinesHtml(order)}</tbody></table>`;
+  await Promise.all([
+    sendMail({ to: customer.email, subject: `Order received — ${order.orderNumber}`, html: `<h2>Thank you for your order, ${escapeHtml(order.deliveryName)}.</h2><p>Your order <strong>${escapeHtml(order.orderNumber)}</strong> has been received.</p>${details}<p><strong>Total: ₹${total}</strong></p><p>Delivery: ${escapeHtml(order.deliveryAddress)}</p>` }),
+    adminMail ? sendMail({ to: adminMail, subject: `New order — ${order.orderNumber}`, html: `<h2>New order received</h2><p><strong>${escapeHtml(order.deliveryName)}</strong> from ${escapeHtml(order.deliveryShop)} has placed order <strong>${escapeHtml(order.orderNumber)}</strong>.</p><p>Phone: ${escapeHtml(order.deliveryPhone)}<br>Address: ${escapeHtml(order.deliveryAddress)}</p>${details}<p><strong>Total: ₹${total}</strong></p>` }) : Promise.resolve(),
+  ]);
+};
+
 /* ============================================================================
    HEALTH / BOOTSTRAP
 ============================================================================ */
@@ -675,6 +715,30 @@ app.get('/api/orders/mine', authenticate, async (req, res, next) => {
   }
 });
 
+app.post('/api/contact', async (req, res, next) => {
+  try {
+    const name = cleanString(req.body.name);
+    const phone = cleanString(req.body.phone);
+    const message = cleanString(req.body.message);
+    if (!name || !phone || !message) {
+      return res.status(400).json({ error: 'Name, phone number and message are required.' });
+    }
+    if (!adminMail) {
+      return res.status(500).json({ error: 'Contact email recipient is not configured.' });
+    }
+    // in sendMail-based dispatch email — add a text alternative and make it read less template-y
+await sendMail({
+  to: customer.email,
+  subject: `Order ${order.orderNumber} dispatched — tracking details inside`,
+  text: `Hi, your order ${order.orderNumber} has been dispatched via ${deliveryPartner}. Tracking ID: ${trackingId}. Thank you for shopping with Singh Medicals.`,
+  html: `<h2>Your order is on the way</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been dispatched with <strong>${escapeHtml(deliveryPartner)}</strong>.</p><p><strong>Tracking ID:</strong> ${escapeHtml(trackingId)}</p><p>Thank you for shopping with Singh Medicals.</p>`,
+});
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/orders', authenticate, async (req, res, next) => {
   try {
     const {
@@ -900,6 +964,10 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
 
         return savedOrder;
       }
+    );
+
+    void sendOrderEmails(order, req.user).catch((error) =>
+      console.error('Order email delivery failed:', error.message)
     );
 
     res.status(201).json(
@@ -1915,6 +1983,8 @@ app.patch(
 
       const currentStatus = target.status;
       const allowed = allowedTransitions[currentStatus] || [];
+      const trackingId = cleanString(req.body.trackingId);
+      const deliveryPartner = cleanString(req.body.deliveryPartner);
 
       if (
         status !== currentStatus &&
@@ -1925,11 +1995,21 @@ app.patch(
         });
       }
 
-      if (status === currentStatus) {
+           const isTrackingUpdateOnly =
+        status === currentStatus &&
+        status === OrderStatus.DISPATCHED &&
+        trackingId &&
+        deliveryPartner;
+
+      if (status === currentStatus && !isTrackingUpdateOnly) {
         return res.status(400).json({
           error: `Order is already ${status}.`,
         });
       }
+
+      // if (status === OrderStatus.DISPATCHED && (!trackingId || !deliveryPartner)) {
+      //   return res.status(400).json({ error: 'Delivery partner and tracking ID are required before dispatching an order.' });
+      // }
 
       const order = await prisma.$transaction(async (tx) => {
         let restoredOrder;
@@ -2024,6 +2104,7 @@ app.patch(
             },
             data: {
               status,
+              ...(status === OrderStatus.DISPATCHED ? { trackingId, deliveryPartner } : {}),
               statusHistory: {
                 create: {
                   status,
@@ -2046,6 +2127,17 @@ app.patch(
 
         return restoredOrder;
       });
+
+      if (status === OrderStatus.DISPATCHED) {
+        const customer = await prisma.user.findUnique({ where: { id: target.userId } });
+        if (customer?.email) {
+          void sendMail({
+            to: customer.email,
+            subject: `Your order has been dispatched — ${order.orderNumber}`,
+            html: `<h2>Your order is on the way</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been dispatched with <strong>${escapeHtml(deliveryPartner)}</strong>.</p><p><strong>Tracking ID:</strong> ${escapeHtml(trackingId)}</p>`,
+          }).catch((error) => console.error('Dispatch email delivery failed:', error.message));
+        }
+      }
 
       res.json(
         serializeOrder(order)
@@ -2648,4 +2740,3 @@ process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
-

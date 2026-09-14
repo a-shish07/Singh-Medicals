@@ -139,6 +139,8 @@ model Order {
   stockDeductedAt DateTime?
   stockRestoredAt DateTime?
   cancelledAt     DateTime?
+  deliveryPartner String?
+  trackingId      String?
 
   @@index([userId, createdAt])
 }

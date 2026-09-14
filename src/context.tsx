@@ -167,10 +167,7 @@ adminLogin: (
 
   confirmedOrderId: string;
   placeOrder: (details: CheckoutDetails) => Promise<void>;
-  updateOrderStatus: (
-    orderId: string,
-    status: OrderStatus
-  ) => Promise<void>;
+  updateOrderStatus: (orderId: string, status: OrderStatus, trackingId?: string, deliveryPartner?: string) => Promise<void>;
   importProductRows: (
     rows: string[][]
   ) => Promise<{ inserted: number; updated: number }>;
@@ -1033,7 +1030,7 @@ const saveCustomerProfile = useCallback(
   );
 
   const updateOrderStatus = useCallback(
-    async (orderId: string, status: OrderStatus) => {
+    async (orderId: string, status: OrderStatus, trackingId?: string, deliveryPartner?: string) => {
       if (!adminToken) {
         throw new Error("Admin session required");
       }
@@ -1041,7 +1038,9 @@ const saveCustomerProfile = useCallback(
       const response = await apiUpdateOrderStatus(
         adminToken,
         orderId,
-        status
+        status,
+        trackingId,
+        deliveryPartner
       );
 
       setOrders((prev) =>

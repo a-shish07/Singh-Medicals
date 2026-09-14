@@ -8,6 +8,9 @@ export default function OrdersTab() {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
   const [searchQ, setSearchQ] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [deliveryPartner, setDeliveryPartner] = useState('');
+  const [trackingId, setTrackingId] = useState('');
+  const [sendingTracking, setSendingTracking] = useState(false);
 
   const filtered = orders.filter(o => {
     const matchStatus = statusFilter === 'All' || o.status === statusFilter;
@@ -18,9 +21,26 @@ export default function OrdersTab() {
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
 
-  const updateStatus = async (orderId: string, status: OrderStatus) => {
-    try { await updateOrderStatus(orderId, status); addToast('Order status updated', 'success'); }
+   const updateStatus = async (orderId: string, status: OrderStatus) => {
+    try {
+      await updateOrderStatus(orderId, status);
+      addToast('Order status updated', 'success');
+    }
     catch (error) { addToast(error instanceof Error ? error.message : 'Could not update order', 'error'); }
+  };
+
+   const sendTracking = async (orderId: string, currentStatus: OrderStatus) => {
+    if (!trackingId.trim() || !deliveryPartner.trim()) {
+      addToast('Enter both delivery partner and tracking ID', 'error');
+      return;
+    }
+    setSendingTracking(true);
+    try {
+      await updateOrderStatus(orderId, currentStatus, trackingId, deliveryPartner);
+      addToast('Tracking details sent to customer', 'success');
+    }
+    catch (error) { addToast(error instanceof Error ? error.message : 'Could not send tracking details', 'error'); }
+    finally { setSendingTracking(false); }
   };
 
   if (selectedOrder) {
@@ -129,6 +149,22 @@ export default function OrdersTab() {
               <div>
                 <p className="text-xs text-[#6B7280]">Delivery Address</p>
                 <p className="font-semibold text-sm text-[#1C1C1E]">{selectedOrder.retailerAddress}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-black/[0.06]">
+              <h4 className="font-semibold text-sm text-[#6B7280] mb-3 uppercase tracking-wide">Dispatch details</h4>
+              <div className="space-y-2">
+                <input value={deliveryPartner} onChange={event => setDeliveryPartner(event.target.value)} placeholder={selectedOrder.deliveryPartner || 'Delivery partner (e.g. Delhivery)'} className="w-full rounded-xl border border-black/[0.08] bg-[#F5F7F5] px-3 py-2 text-sm outline-none focus:border-[#0D9A55]" />
+                               <input value={trackingId} onChange={event => setTrackingId(event.target.value)} placeholder={selectedOrder.trackingId || 'Tracking ID'} className="w-full rounded-xl border border-black/[0.08] bg-[#F5F7F5] px-3 py-2 text-sm outline-none focus:border-[#0D9A55]" />
+                {selectedOrder.trackingId && <p className="text-xs text-[#0D9A55]">Current: {selectedOrder.deliveryPartner} — {selectedOrder.trackingId}</p>}
+                                <button
+                  onClick={() => sendTracking(selectedOrder.id, selectedOrder.status)}
+                  disabled={!trackingId.trim() || !deliveryPartner.trim() || sendingTracking}
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-[#0D9A55] text-white text-sm font-bold hover:bg-[#0B8548] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {sendingTracking ? 'Sending…' : 'Send Tracking to Customer'}
+                </button>
               </div>
             </div>
 
