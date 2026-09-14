@@ -50,7 +50,8 @@ export interface Customer {
   createdAt: string;
   orderCount: number;
   gstNumber?: string;
-drugLicence?: string;
+drugLicence20B?: string;
+drugLicence21B?: string;
 city?: string;
 state?: string;
 pincode?: string;

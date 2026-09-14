@@ -12,12 +12,12 @@ export default function About() {
       icon: "calendar",
     },
     {
-      num: "500+",
+      num: "250+",
       label: "Products Listed",
       icon: "box",
     },
     {
-      num: "200+",
+      num: "100+",
       label: "Partner Pharmacies",
       icon: "users",
     },
@@ -42,7 +42,7 @@ export default function About() {
     {
       icon: "₹",
       title: "Fair Pricing",
-      desc: "Net rates are revised every week based on current market. We do not inflate margins — you get the best wholesale price available in the region.",
+      desc: "Net rates are revised every week based on current market. We do not inflate margins — you get the best  price available in the region.",
     },
     {
       icon: "🤝",
@@ -277,9 +277,8 @@ export default function About() {
               }}
               className="max-w-2xl text-base leading-7 text-[#6B7280] sm:text-lg"
             >
-              Singh Medical Stores has been the wholesale pharmaceutical
-              partner of choice for retail pharmacies across Eastern Uttar
-              Pradesh for over 25 years.
+              Singh Medical Stores has been the  pharmaceutical
+              partner of choice for retail pharmacies across Whole India for over 25 years.
             </motion.p>
 
             {/* Hero trust indicators */}
@@ -373,10 +372,9 @@ export default function About() {
               </p>
 
               <p>
-                Today, we supply over 500 pharmaceutical products from more
-                than 50 leading brands to 200+ registered retail pharmacy
-                outlets across Kushinagar, Gorakhpur, Deoria, Basti, Mau,
-                and Azamgarh districts. Every product we supply is sourced
+                Today, we supply over 250 pharmaceutical products from more
+                than 50 leading brands to 100+ registered retail pharmacy
+                outlets across whole India. Every product we supply is sourced
                 from authorised C&F agents, guaranteeing genuine stock at
                 every transaction.
               </p>
@@ -782,8 +780,8 @@ export default function About() {
             </h2>
 
             <p className="mx-auto mb-8 max-w-xl text-sm leading-6 text-white/75 sm:text-base">
-              Register your pharmacy and get instant access to 500+ products
-              at wholesale net rates, with same-day dispatch.
+              Register your pharmacy and get instant access to 250+ products
+              at best net rates, with same-day dispatch.
             </p>
 
             <div className="flex flex-col justify-center gap-3 sm:flex-row">
@@ -844,7 +842,7 @@ export default function About() {
 
               <span className="flex items-center gap-1.5">
                 <span className="text-white">✓</span>
-                Wholesale pricing
+                Best pricing
               </span>
 
               <span className="flex items-center gap-1.5">

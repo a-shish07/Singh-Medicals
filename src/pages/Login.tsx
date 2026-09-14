@@ -23,6 +23,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+const [drugLicence20B, setDrugLicence20B] = useState("");
+const [drugLicence21B, setDrugLicence21B] = useState("");
+const [gstNumber, setGstNumber] = useState("");
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -45,6 +48,15 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
         setError("Please enter your full name.");
         return;
       }
+       if (!drugLicence20B.trim()) {
+    setError("Please enter your Drug Licence 20B.");
+    return;
+  }
+
+  if (!drugLicence21B.trim()) {
+    setError("Please enter your Drug Licence 21B.");
+    return;
+  }
 
       if (password.length < 8) {
         setError("Password must be at least 8 characters.");
@@ -67,11 +79,14 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
        */
       if (mode === "register") {
         const result = await registerWithEmail({
-          name: name.trim(),
-          email: cleanEmail,
-          password,
-          phone,
-        });
+  name: name.trim(),
+  email: cleanEmail,
+  password,
+  phone: phone.trim(),
+  drugLicence20B: drugLicence20B.trim(),
+  drugLicence21B: drugLicence21B.trim(),
+  gstNumber: gstNumber.trim() || undefined,
+});
 
         /*
          * Registration creates CUSTOMER accounts.
@@ -235,6 +250,57 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
               />
             </label>
           )}
+
+          {mode === "register" && (
+  <label className="block text-sm font-semibold">
+    Drug Licence 20B
+    <span className="ml-1 text-red-500">*</span>
+
+    <input
+      required
+      value={drugLicence20B}
+      onChange={(e) => setDrugLicence20B(e.target.value)}
+      placeholder="Enter Drug Licence 20B"
+      autoComplete="off"
+      className="mt-1.5 w-full px-4 py-3 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
+    />
+  </label>
+)}
+
+{mode === "register" && (
+  <label className="block text-sm font-semibold">
+    Drug Licence 21B
+    <span className="ml-1 text-red-500">*</span>
+
+    <input
+      required
+      value={drugLicence21B}
+      onChange={(e) => setDrugLicence21B(e.target.value)}
+      placeholder="Enter Drug Licence 21B"
+      autoComplete="off"
+      className="mt-1.5 w-full px-4 py-3 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
+    />
+  </label>
+)}
+
+{mode === "register" && (
+  <label className="block text-sm font-semibold">
+    GST Number
+    <span className="ml-1 font-normal text-[#9CA3AF]">
+      (Optional)
+    </span>
+
+    <input
+      value={gstNumber}
+      onChange={(e) =>
+        setGstNumber(e.target.value.toUpperCase())
+      }
+      placeholder="Enter GST number (optional)"
+      autoComplete="off"
+      className="mt-1.5 w-full px-4 py-3 bg-[#F5F7F5] border border-black/[.08] rounded-xl font-normal outline-none focus:border-[#0D9A55]"
+    />
+  </label>
+)}
 
          {/* Password */}
 <label className="block text-sm font-semibold">

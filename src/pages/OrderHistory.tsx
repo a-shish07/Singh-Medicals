@@ -60,7 +60,7 @@ export default function OrderHistory() {
             </h1>
 
             <p className="text-sm text-[#6B7280] mt-1">
-              View and track all your wholesale orders.
+              View and track all your  orders.
             </p>
           </div>
 
@@ -99,7 +99,7 @@ export default function OrderHistory() {
               </h3>
 
               <p className="text-[#6B7280] mb-6 text-sm max-w-sm">
-                Start browsing the catalogue to place your first wholesale
+                Start browsing the catalogue to place your first 
                 order.
               </p>
 

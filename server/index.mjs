@@ -256,7 +256,8 @@ const publicUser = (user) => ({
   phone: user.phone,
   shopName: user.shopName,
   gstNumber: user.gstNumber,
-  drugLicence: user.drugLicence,
+  drugLicence20B: user.drugLicence20B,
+  drugLicence21B: user.drugLicence21B,
   profileImage: user.profileImage,
   address: user.address,
   city: user.city,
@@ -467,36 +468,44 @@ app.post(
   async (req, res, next) => {
   try {
     const {
-      name,
-      email,
-      password,
-      phone,
-      shopName,
-      address,
-    } = req.body;
+  name,
+  email,
+  password,
+  phone,
+  shopName,
+  drugLicence20B,
+  drugLicence21B,
+  gstNumber,
+  address,
+} = req.body;
 
-    if (
-      !name?.trim() ||
-      !/^\S+@\S+\.\S+$/.test(email || '') ||
-      typeof password !== 'string' ||
-      password.length < 8
-    ) {
-      return res.status(400).json({
-        error:
-          'Name, valid email, and a password of at least 8 characters are required.',
-      });
-    }
+   if (
+  !name?.trim() ||
+  !/^\S+@\S+\.\S+$/.test(email || '') ||
+  typeof password !== 'string' ||
+  password.length < 8 ||
+  !drugLicence20B?.trim() ||
+  !drugLicence21B?.trim()
+) {
+  return res.status(400).json({
+    error:
+      'Name, valid email, password, and both Drug Licences (20B and 21B) are required.',
+  });
+}
 
-    const user = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        passwordHash: await bcrypt.hash(password, 12),
-        phone: phone?.trim() || null,
-        shopName: shopName?.trim() || null,
-        address: address?.trim() || null,
-      },
-    });
+  const user = await prisma.user.create({
+  data: {
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    passwordHash: await bcrypt.hash(password, 12),
+    phone: phone?.trim() || null,
+    shopName: shopName?.trim() || null,
+    gstNumber: gstNumber?.trim() || null,
+    drugLicence20B: drugLicence20B.trim(),
+    drugLicence21B: drugLicence21B.trim(),
+    address: address?.trim() || null,
+  },
+});
 
     res.status(201).json({
       token: tokenFor(user),
@@ -569,7 +578,8 @@ app.patch('/api/profile', authenticate, async (req, res, next) => {
       phone,
       shopName,
       gstNumber,
-      drugLicence,
+      drugLicence20B,
+  drugLicence21B,
       profileImage,
       address,
       city,
@@ -592,24 +602,37 @@ app.patch('/api/profile', authenticate, async (req, res, next) => {
       });
     }
 
-    const updatedUser = await prisma.user.update({
-      where: {
-        id: req.user.id,
-      },
-      data: {
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        phone: phone?.trim() || null,
-        shopName: shopName?.trim() || null,
-        gstNumber: gstNumber?.trim() || null,
-        drugLicence: drugLicence?.trim() || null,
-        profileImage: profileImage?.trim() || null,
-        address: address?.trim() || null,
-        city: city?.trim() || null,
-        state: state?.trim() || null,
-        pincode: pincode?.trim() || null,
-      },
-    });
+    if (!drugLicence20B?.trim()) {
+  return res.status(400).json({
+    error: 'Drug Licence 20B is required.',
+  });
+}
+
+if (!drugLicence21B?.trim()) {
+  return res.status(400).json({
+    error: 'Drug Licence 21B is required.',
+  });
+}
+
+   const updatedUser = await prisma.user.update({
+  where: {
+    id: req.user.id,
+  },
+  data: {
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    phone: phone?.trim() || null,
+    shopName: shopName?.trim() || null,
+    gstNumber: gstNumber?.trim() || null,
+    drugLicence20B: drugLicence20B?.trim(),
+    drugLicence21B: drugLicence21B?.trim(),
+    profileImage: profileImage?.trim() || null,
+    address: address?.trim() || null,
+    city: city?.trim() || null,
+    state: state?.trim() || null,
+    pincode: pincode?.trim() || null,
+  },
+});
 
     res.json({
       user: publicUser(updatedUser),
@@ -720,19 +743,38 @@ app.post('/api/contact', async (req, res, next) => {
     const name = cleanString(req.body.name);
     const phone = cleanString(req.body.phone);
     const message = cleanString(req.body.message);
+
     if (!name || !phone || !message) {
-      return res.status(400).json({ error: 'Name, phone number and message are required.' });
+      return res.status(400).json({
+        error: 'Name, phone number and message are required.',
+      });
     }
+
     if (!adminMail) {
-      return res.status(500).json({ error: 'Contact email recipient is not configured.' });
+      return res.status(500).json({
+        error: 'Contact email recipient is not configured.',
+      });
     }
-    // in sendMail-based dispatch email — add a text alternative and make it read less template-y
-await sendMail({
-  to: customer.email,
-  subject: `Order ${order.orderNumber} dispatched — tracking details inside`,
-  text: `Hi, your order ${order.orderNumber} has been dispatched via ${deliveryPartner}. Tracking ID: ${trackingId}. Thank you for shopping with Singh Medicals.`,
-  html: `<h2>Your order is on the way</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been dispatched with <strong>${escapeHtml(deliveryPartner)}</strong>.</p><p><strong>Tracking ID:</strong> ${escapeHtml(trackingId)}</p><p>Thank you for shopping with Singh Medicals.</p>`,
-});
+
+    await sendMail({
+      to: adminMail,
+      subject: `New Contact Query — ${name}`,
+      text: [
+        `Name: ${name}`,
+        `Phone: ${phone}`,
+        '',
+        'Message:',
+        message,
+      ].join('\n'),
+      html: `
+        <h2>New Contact Query</h2>
+        <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(phone)}</p>
+        <p><strong>Message:</strong></p>
+        <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+      `,
+    });
+
     res.status(201).json({ ok: true });
   } catch (error) {
     next(error);
@@ -1997,7 +2039,7 @@ app.patch(
 
            const isTrackingUpdateOnly =
         status === currentStatus &&
-        status === OrderStatus.DISPATCHED &&
+        status !== OrderStatus.CANCELLED &&
         trackingId &&
         deliveryPartner;
 
@@ -2128,20 +2170,148 @@ app.patch(
         return restoredOrder;
       });
 
-      if (status === OrderStatus.DISPATCHED) {
-        const customer = await prisma.user.findUnique({ where: { id: target.userId } });
-        if (customer?.email) {
-          void sendMail({
-            to: customer.email,
-            subject: `Your order has been dispatched — ${order.orderNumber}`,
-            html: `<h2>Your order is on the way</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been dispatched with <strong>${escapeHtml(deliveryPartner)}</strong>.</p><p><strong>Tracking ID:</strong> ${escapeHtml(trackingId)}</p>`,
-          }).catch((error) => console.error('Dispatch email delivery failed:', error.message));
-        }
-      }
+      // if (status === OrderStatus.DISPATCHED) {
+      //   const customer = await prisma.user.findUnique({ where: { id: target.userId } });
+      //   if (customer?.email) {
+      //     void sendMail({
+      //       to: customer.email,
+      //       subject: `Your order has been dispatched — ${order.orderNumber}`,
+      //       html: `<h2>Your order is on the way</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been dispatched with <strong>${escapeHtml(deliveryPartner)}</strong>.</p><p><strong>Tracking ID:</strong> ${escapeHtml(trackingId)}</p>`,
+      //     }).catch((error) => console.error('Dispatch email delivery failed:', error.message));
+      //   }
+      // }
 
       res.json(
         serializeOrder(order)
       );
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+app.post(
+  '/api/admin/orders/:id/tracking-email',
+  authenticate,
+  adminOnly,
+  async (req, res, next) => {
+    try {
+      const trackingId = cleanString(req.body.trackingId);
+      const deliveryPartner = cleanString(req.body.deliveryPartner);
+
+      if (!trackingId || !deliveryPartner) {
+        return res.status(400).json({
+          error: 'Delivery partner and tracking ID are required.',
+        });
+      }
+
+      const order = await prisma.order.findFirst({
+        where: {
+          OR: [
+            { id: req.params.id },
+            { orderNumber: req.params.id },
+          ],
+        },
+      });
+
+      if (!order) {
+        return res.status(404).json({
+          error: 'Order not found.',
+        });
+      }
+
+      if (order.status === OrderStatus.CANCELLED) {
+        return res.status(400).json({
+          error: 'Tracking email cannot be sent for a cancelled order.',
+        });
+      }
+
+      const customer = await prisma.user.findUnique({
+        where: {
+          id: order.userId,
+        },
+        select: {
+          name: true,
+          email: true,
+        },
+      });
+
+      if (!customer?.email) {
+        return res.status(400).json({
+          error: 'Customer email is not available.',
+        });
+      }
+
+      const updatedOrder = await prisma.order.update({
+        where: {
+          id: order.id,
+        },
+        data: {
+          trackingId,
+          deliveryPartner,
+        },
+        include: {
+          items: true,
+          statusHistory: {
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+      });
+
+      await sendMail({
+        to: customer.email,
+        subject: `Order ${order.orderNumber} — Tracking Details`,
+        text: [
+          `Hi ${customer.name || 'there'},`,
+          '',
+          `Your order ${order.orderNumber} is currently ${order.status}.`,
+          '',
+          `Delivery Partner: ${deliveryPartner}`,
+          `Tracking ID: ${trackingId}`,
+          '',
+          'Thank you for shopping with Singh Medicals.',
+        ].join('\n'),
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.6">
+            <h2>Your Order Tracking Details</h2>
+
+            <p>Hi ${escapeHtml(customer.name || 'there')},</p>
+
+            <p>
+              Your order
+              <strong>${escapeHtml(order.orderNumber)}</strong>
+              is currently
+              <strong>${escapeHtml(order.status)}</strong>.
+            </p>
+
+            <div style="
+              background:#f5f7f6;
+              padding:16px;
+              border-radius:10px;
+              margin:16px 0;
+            ">
+              <p>
+                <strong>Delivery Partner:</strong>
+                ${escapeHtml(deliveryPartner)}
+              </p>
+
+              <p>
+                <strong>Tracking ID:</strong>
+                ${escapeHtml(trackingId)}
+              </p>
+            </div>
+
+            <p>Thank you for shopping with Singh Medicals.</p>
+          </div>
+        `,
+      });
+
+      return res.json({
+        ok: true,
+        order: serializeOrder(updatedOrder),
+      });
     } catch (error) {
       next(error);
     }

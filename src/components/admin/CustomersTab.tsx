@@ -7,9 +7,10 @@ export default function CustomersTab() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  
 
   const visible = customers.filter(c =>
-    `${c.name} ${c.email} ${c.phone || ''} ${c.shopName || ''} ${c.gstNumber || ''} ${c.drugLicence || ''}`
+    `${c.name} ${c.email} ${c.phone || ''} ${c.shopName || ''} ${c.gstNumber || ''} ${c.drugLicence20B || ''}`
       .toLowerCase()
       .includes(search.toLowerCase())
   );
@@ -102,15 +103,38 @@ export default function CustomersTab() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-[0_2px_16px_rgba(0,0,0,.06)]">
-            <h3 className="font-extrabold text-[#1C1C1E] mb-4">Business Details</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InfoRow label="Shop Name" value={selectedCustomer.shopName} />
-              <InfoRow label="GST Number" value={selectedCustomer.gstNumber} />
-              <InfoRow label="Drug Licence" value={selectedCustomer.drugLicence} />
-              <InfoRow label="Account Role" value="CUSTOMER" />
-            </div>
-          </div>
+         <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-[0_2px_16px_rgba(0,0,0,.06)]">
+  <h3 className="font-extrabold text-[#1C1C1E] mb-4">
+    Business & Licence Details
+  </h3>
+
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <InfoRow
+      label="Shop Name"
+      value={selectedCustomer.shopName}
+    />
+
+    <InfoRow
+      label="GST Number"
+      value={selectedCustomer.gstNumber}
+    />
+
+    <InfoRow
+      label="Drug Licence 20B"
+      value={selectedCustomer.drugLicence20B}
+    />
+
+    <InfoRow
+      label="Drug Licence 21B"
+      value={selectedCustomer.drugLicence21B}
+    />
+
+    <InfoRow
+      label="Account Role"
+      value="CUSTOMER"
+    />
+  </div>
+</div>
 
           <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-[0_2px_16px_rgba(0,0,0,.06)] lg:col-span-2">
             <h3 className="font-extrabold text-[#1C1C1E] mb-4">Address & Delivery Details</h3>
@@ -219,7 +243,7 @@ export default function CustomersTab() {
               <div className="rounded-xl bg-[#F7F8F7] px-3 py-2.5 min-w-0"><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF] font-bold">Shop</p><p className="text-sm font-semibold text-[#374151] truncate mt-0.5">{c.shopName || '—'}</p></div>
               <div className="rounded-xl bg-[#F7F8F7] px-3 py-2.5 min-w-0"><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF] font-bold">Phone</p><p className="text-sm font-semibold text-[#374151] truncate mt-0.5">{c.phone || '—'}</p></div>
             </div>
-            {(c.gstNumber || c.drugLicence) && <div className="flex flex-wrap gap-2 mt-3">{c.gstNumber && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">GST: {c.gstNumber}</span>}{c.drugLicence && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">DL: {c.drugLicence}</span>}</div>}
+            {(c.gstNumber || c.drugLicence20B || c.drugLicence21B) && <div className="flex flex-wrap gap-2 mt-3">{c.gstNumber && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">GST: {c.gstNumber}</span>}{c.drugLicence20B && c.drugLicence21B && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">DL: {c.drugLicence20B} / {c.drugLicence21B}</span>}</div>}
             <button onClick={() => setSelectedCustomerId(c.id)} className="w-full mt-3 py-2.5 rounded-xl bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2] transition-colors">View Full Details →</button>
           </div>
         ))}

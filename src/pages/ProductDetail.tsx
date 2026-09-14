@@ -608,7 +608,7 @@ export default function ProductDetail() {
               <div className="relative">
 
                 <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9CA3AF]">
-                  Wholesale Net Rate
+                  Best Net Rate
                 </p>
 
                 <div className="flex flex-wrap items-baseline gap-2.5">
@@ -1003,20 +1003,7 @@ export default function ProductDetail() {
                     </div>
 
                     {/* General */}
-                    <div className="rounded-2xl bg-[#F8FAF8] p-5 sm:col-span-2">
-                      <p className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#0D9A55]">
-                        General Information
-                      </p>
-
-                      <p className="text-sm leading-7 text-[#6B7280]">
-                        This product is sold at wholesale net rates to
-                        registered retail pharmacy licence holders only.
-                        Prescription requirements apply as per applicable
-                        drug schedules. All products are sourced directly
-                        from authorised distributors and are guaranteed
-                        genuine.
-                      </p>
-                    </div>
+                   
                   </motion.div>
                 ) : (
                   <motion.div

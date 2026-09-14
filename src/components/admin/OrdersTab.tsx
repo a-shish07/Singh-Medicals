@@ -4,7 +4,12 @@ import type { OrderStatus } from '../../types';
 import { STATUS_STYLES, ALL_STATUSES } from './constants';
 
 export default function OrdersTab() {
-  const { orders, updateOrderStatus, addToast } = useApp();
+const {
+  orders,
+  updateOrderStatus,
+  sendTrackingEmail,
+  addToast,
+} = useApp();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
   const [searchQ, setSearchQ] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -29,19 +34,39 @@ export default function OrdersTab() {
     catch (error) { addToast(error instanceof Error ? error.message : 'Could not update order', 'error'); }
   };
 
-   const sendTracking = async (orderId: string, currentStatus: OrderStatus) => {
-    if (!trackingId.trim() || !deliveryPartner.trim()) {
-      addToast('Enter both delivery partner and tracking ID', 'error');
-      return;
-    }
-    setSendingTracking(true);
-    try {
-      await updateOrderStatus(orderId, currentStatus, trackingId, deliveryPartner);
-      addToast('Tracking details sent to customer', 'success');
-    }
-    catch (error) { addToast(error instanceof Error ? error.message : 'Could not send tracking details', 'error'); }
-    finally { setSendingTracking(false); }
-  };
+   const sendTracking = async (orderId: string) => {
+  if (!trackingId.trim() || !deliveryPartner.trim()) {
+    addToast(
+      'Enter both delivery partner and tracking ID',
+      'error'
+    );
+    return;
+  }
+
+  setSendingTracking(true);
+
+  try {
+    await sendTrackingEmail(
+      orderId,
+      trackingId.trim(),
+      deliveryPartner.trim()
+    );
+
+    addToast(
+      'Tracking details sent to customer',
+      'success'
+    );
+  } catch (error) {
+    addToast(
+      error instanceof Error
+        ? error.message
+        : 'Could not send tracking details',
+      'error'
+    );
+  } finally {
+    setSendingTracking(false);
+  }
+};
 
   if (selectedOrder) {
     return (
@@ -159,11 +184,19 @@ export default function OrdersTab() {
                                <input value={trackingId} onChange={event => setTrackingId(event.target.value)} placeholder={selectedOrder.trackingId || 'Tracking ID'} className="w-full rounded-xl border border-black/[0.08] bg-[#F5F7F5] px-3 py-2 text-sm outline-none focus:border-[#0D9A55]" />
                 {selectedOrder.trackingId && <p className="text-xs text-[#0D9A55]">Current: {selectedOrder.deliveryPartner} — {selectedOrder.trackingId}</p>}
                                 <button
-                  onClick={() => sendTracking(selectedOrder.id, selectedOrder.status)}
-                  disabled={!trackingId.trim() || !deliveryPartner.trim() || sendingTracking}
+               onClick={() => sendTracking(selectedOrder.id)}
+                 disabled={ selectedOrder.status === 'CANCELLED' ||
+  !trackingId.trim() ||
+  !deliveryPartner.trim() ||
+  sendingTracking
+}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-[#0D9A55] text-white text-sm font-bold hover:bg-[#0B8548] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {sendingTracking ? 'Sending…' : 'Send Tracking to Customer'}
+                 {selectedOrder.status === 'CANCELLED'
+  ? 'Tracking Unavailable for Cancelled Order'
+  : sendingTracking
+    ? 'Sending…'
+    : 'Send Tracking to Customer'}
                 </button>
               </div>
             </div>

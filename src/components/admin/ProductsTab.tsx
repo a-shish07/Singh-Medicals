@@ -408,25 +408,11 @@ const productFormModal = (adding || editing) ? (
               </section>
 
               <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-sm font-extrabold text-slate-900">Medicine Settings</h3>
-                    <p className="text-xs text-slate-500 mt-1">Optional catalogue information.</p>
-                  </div>
-                </div>
+               
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <label>
-                    <span className="text-xs font-bold text-slate-700">Barcode</span>
-                    <input value={form.barcode} onChange={e => setField('barcode', e.target.value)} placeholder="Optional barcode" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
-                  </label>
-                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 mt-5 sm:mt-0 cursor-pointer">
-                    <input type="checkbox" checked={form.prescriptionRequired} onChange={e => setField('prescriptionRequired', e.target.checked)} className="h-4 w-4 accent-blue-600" />
-                    <span><span className="block text-xs font-bold text-slate-800">Prescription required</span><span className="block text-[11px] text-slate-500 mt-0.5">Mark this medicine as prescription-only.</span></span>
-                  </label>
-                  <label className="sm:col-span-2">
-                    <span className="text-xs font-bold text-slate-700">Description</span>
-                    <textarea value={form.description} onChange={e => setField('description', e.target.value)} rows={3} placeholder="Optional medicine description" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none resize-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
-                  </label>
+                 
+                  
+                 
                   <div className="sm:col-span-2">
                     <span className="text-xs font-bold text-slate-700">Medicine Images</span>
                     <div className="mt-1.5 flex flex-col sm:flex-row gap-3">
@@ -523,7 +509,7 @@ const productFormModal = (adding || editing) ? (
                 <div className="mt-4 rounded-2xl bg-slate-900 text-white p-4">
                   <div className="flex items-center justify-between text-xs text-slate-300"><span>PTR</span><span>{price(preview.ptr)}</span></div>
                   <div className="flex items-center justify-between text-xs text-slate-300 mt-2"><span>Discount Amount</span><span>- {price(preview.discountAmount)}</span></div>
-                  <div className="flex items-center justify-between text-sm font-extrabold mt-3 pt-3 border-t border-white/10"><span>Final Effective PTR</span><span className="text-emerald-300">{price(preview.effectivePtr)}</span></div>
+                  <div className="flex items-center justify-between text-sm font-extrabold mt-3 pt-3 border-t border-white/10"><span>Final Effective PTR (Without GST)</span><span className="text-emerald-300">{price(preview.effectivePtr)}</span></div>
                   {preview.buy > 0 && preview.free > 0 && <p className="mt-3 text-[11px] text-slate-300">Offer: <strong className="text-white">BUY {preview.buy} GET {preview.free} FREE</strong></p>}
                 </div>
               </section>
@@ -546,7 +532,7 @@ const productFormModal = (adding || editing) ? (
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] font-bold text-blue-100">Inventory</p>
             <h2 className="text-xl sm:text-2xl font-extrabold mt-1">Medicine Inventory</h2>
-            <p className="text-xs sm:text-sm text-blue-100 mt-1">Manage medicines, wholesale pricing, offers and stock like a professional B2B pharmacy portal.</p>
+            <p className="text-xs sm:text-sm text-blue-100 mt-1">Manage medicines, best pricing, offers and stock like a professional B2B pharmacy portal.</p>
           </div>
           <button onClick={openAdd} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-[#1266F1] px-4 py-2.5 text-sm font-extrabold hover:bg-blue-50 shadow-sm">
             <Plus className="h-4 w-4" /> Add Product

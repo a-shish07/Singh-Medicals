@@ -27,6 +27,45 @@ function DiscountBadge({ mrp, price }: { mrp: number; price: number }) {
   );
 }
 
+function offerLabel(product: Product) {
+  const type = String(
+    (product as Product & { discountType?: string | null }).discountType ||
+      "NONE"
+  );
+
+  const discount = Number(
+    (product as Product & { discountValue?: number | null }).discountValue || 0
+  );
+
+  const buy = Number(
+    (product as Product & { buyQuantity?: number | null }).buyQuantity || 0
+  );
+
+  const free = Number(
+    (product as Product & { freeQuantity?: number | null }).freeQuantity || 0
+  );
+
+  if (
+    (type === "SAME_PRODUCT_BONUS" ||
+      type === "SAME_PRODUCT_BONUS_AND_DISCOUNT") &&
+    buy > 0 &&
+    free > 0
+  ) {
+    return type === "SAME_PRODUCT_BONUS_AND_DISCOUNT"
+      ? `BUY ${buy} GET ${free} FREE + ${discount}% OFF`
+      : `BUY ${buy} GET ${free} FREE`;
+  }
+
+  if (
+    type === "DISCOUNT_ON_PTR" &&
+    discount > 0
+  ) {
+    return `${discount}% OFF`;
+  }
+
+  return null;
+}
+
 function ProductCard({ product }: { product: Product }) {
   const {
     cartItems,
@@ -40,31 +79,45 @@ function ProductCard({ product }: { product: Product }) {
     (i) => i.productId === product.id
   );
 
-  const [localQty, setLocalQty] = useState(1);
+const [localQty, setLocalQty] = useState<number | "">(1);
+const [cartQtyDraft, setCartQtyDraft] =
+  useState<string | null>(null);
 
   const discountPct = effectivePrice(product) < Number(product.mrp)
     ? Math.max(0, Math.round(((Number(product.mrp) - effectivePrice(product)) / Number(product.mrp)) * 100))
     : 0;
 
   const handleLocalQtyChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  const value = e.target.value;
 
-    if (value === "") {
-      setLocalQty(1);
-      return;
-    }
+  if (value === "") {
+    setLocalQty("");
+    return;
+  }
 
-    const numericValue = Number(value);
+  const numericValue = Number(value);
 
-    if (Number.isFinite(numericValue)) {
-      setLocalQty(Math.max(1, Math.floor(numericValue)));
-    }
-  };
+  if (
+    Number.isFinite(numericValue) &&
+    numericValue >= 0
+  ) {
+    setLocalQty(Math.floor(numericValue));
+  }
+};
+
+const handleLocalQtyBlur = () => {
+  if (localQty === "" || localQty < 1) {
+    setLocalQty(1);
+  }
+};
 
   const handleAdd = () => {
-    const quantity = Math.max(1, localQty);
+    const quantity =
+  localQty === ""
+    ? 1
+    : Math.max(1, localQty);
 
     addToCart(product.id, quantity);
 
@@ -75,25 +128,30 @@ function ProductCard({ product }: { product: Product }) {
     setLocalQty(1);
   };
 
-  const handleCartQtyChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
+ const handleCartQtyChange = (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  setCartQtyDraft(e.target.value);
+};
 
-    if (value === "") {
-      updateQty(product.id, 1);
-      return;
-    }
+const commitCartQty = () => {
+  if (cartQtyDraft === null) {
+    return;
+  }
 
-    const numericValue = Number(value);
+  const value = Number(cartQtyDraft);
 
-    if (Number.isFinite(numericValue)) {
-      updateQty(
-        product.id,
-        Math.max(1, Math.floor(numericValue))
-      );
-    }
-  };
+  if (!Number.isFinite(value) || value <= 0) {
+    updateQty(product.id, 0);
+  } else {
+    updateQty(
+      product.id,
+      Math.floor(value)
+    );
+  }
+
+  setCartQtyDraft(null);
+};
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden group">
@@ -109,6 +167,12 @@ function ProductCard({ product }: { product: Product }) {
             mrp={product.mrp}
             price={effectivePrice(product)}
           />
+
+          {offerLabel(product) && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">
+              🎁 {offerLabel(product)}
+            </span>
+          )}
 
           
         </div>
@@ -195,6 +259,10 @@ function ProductCard({ product }: { product: Product }) {
           </p>
         </div>
 
+        <p className="mb-3 text-[11px] text-[#6B7280]">
+          Stock available: {Math.max(0, Math.floor(Number(product.stock || 0)))}
+        </p>
+
         {/* Actions */}
         <div className="mt-auto">
 
@@ -217,14 +285,21 @@ function ProductCard({ product }: { product: Product }) {
                 >
                   −
                 </button>
-
-                <input
-                  type="number"
-                  min={1}
-                  value={cartItem.quantity}
-                  onChange={handleCartQtyChange}
-                  className="w-16 h-8 text-center bg-white border border-[#0D9A55]/20 rounded-lg text-sm font-bold text-[#0D9A55] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30"
-                />
+<input
+  type="number"
+  min={0}
+  value={
+    cartQtyDraft !== null
+      ? cartQtyDraft
+      : cartItem.quantity
+  }
+  onChange={handleCartQtyChange}
+  onFocus={() =>
+    setCartQtyDraft(String(cartItem.quantity))
+  }
+  onBlur={commitCartQty}
+  className="w-16 h-8 text-center bg-white border border-[#0D9A55]/20 rounded-lg text-sm font-bold text-[#0D9A55] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30"
+/>
 
                 <button
                   onClick={() =>
@@ -265,8 +340,8 @@ function ProductCard({ product }: { product: Product }) {
                 <button
                   onClick={() =>
                     setLocalQty((q) =>
-                      Math.max(1, q - 1)
-                    )
+  q === "" ? 1 : Math.max(1, q - 1)
+)
                   }
                   className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
                 >
@@ -276,9 +351,10 @@ function ProductCard({ product }: { product: Product }) {
                 {/* Editable quantity */}
                 <input
                   type="number"
-                  min={1}
+                  min={0}
                   value={localQty}
-                  onChange={handleLocalQtyChange}
+onChange={handleLocalQtyChange}
+onBlur={handleLocalQtyBlur}
                   aria-label={`Quantity for ${product.name}`}
                   className="w-16 h-9 text-center bg-[#F5F7F5] border border-black/[0.08] rounded-xl text-sm font-bold text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30 focus:border-[#0D9A55]"
                 />
@@ -286,7 +362,9 @@ function ProductCard({ product }: { product: Product }) {
                 {/* Plus */}
                 <button
                   onClick={() =>
-                    setLocalQty((q) => q + 1)
+                    setLocalQty((q) =>
+                      q === "" ? 1 : q + 1
+                    )
                   }
                   className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
                 >
@@ -364,13 +442,13 @@ export default function Catalogue() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#E8F5EE] rounded-full mb-4">
               <span className="w-2 h-2 rounded-full bg-[#0D9A55] animate-pulse" />
-              <span className="text-xs font-semibold text-[#0D9A55]">Live Wholesale Rates · Updated Today</span>
+              <span className="text-xs font-semibold text-[#0D9A55]">Live Best Rates · Updated Today</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1C1C1E] mb-3 leading-tight" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              Wholesale Pharma Catalogue
+               Pharma Catalogue
             </h1>
             <p className="text-[#6B7280] text-lg mb-6">
-              Trusted wholesale rates for retail pharmacies — direct from distributor, no middlemen.
+              Trusted best rates for retail pharmacies — direct from distributor, no middlemen.
             </p>
 
             {/* Search Bar */}

@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useApp } from "../context";
-import { PRODUCTS } from "../data";
-import type { Category } from "../types";
+import type { Category, Product } from "../types";
 import {
   fadeUp,
   fadeLeft,
@@ -18,31 +17,31 @@ const TESTIMONIALS = [
   {
     name: "Rajesh Kumar",
     shop: "Kumar Medical Store",
-    city: "Padrauna",
+    city: "Lucknow",
     quote:
-      "Best wholesale rates in the district. Same-day delivery and genuine stock every time. Been ordering for 4 years.",
+      "Best rates in the state. Same-day delivery and genuine stock every time. Been ordering for 4 years.",
     stars: 5,
   },
   {
     name: "Sanjay Gupta",
     shop: "Gupta Pharmacy",
-    city: "Kushinagar",
+    city: "Chennai",
     quote:
       "Very smooth ordering process. The net rates are competitive and they always honour the scheme offers on time.",
     stars: 5,
   },
   {
     name: "Meena Devi",
-    shop: "New Life Medicals",
-    city: "Deoria",
+    shop: "SRIVARI PHARMACY",
+    city: "Vishakhapatnam",
     quote:
       "Reliable supply of branded medicines. No shortage issues and the team is very responsive on WhatsApp.",
     stars: 5,
   },
   {
-    name: "Prakash Singh",
-    shop: "Singh Medical Agency",
-    city: "Gorakhpur",
+    name: "Venkatesh Reddy",
+    shop: "Venkatesh Medical Stores",
+    city: "Karnataka",
     quote:
       "Switched from another distributor 2 years ago. The pricing and service are genuinely better here.",
     stars: 4,
@@ -159,11 +158,11 @@ const FAQ_ITEMS = [
   },
   {
     q: "What is the minimum order value?",
-    a: "There is no minimum order for registered pharmacy retailers. Order any quantity at wholesale net rates.",
+    a: "There is no minimum order for registered pharmacy retailers. Order any quantity at best net rates.",
   },
   {
     q: "How soon will my order be dispatched?",
-    a: "Orders confirmed before 12 PM are typically dispatched same day. Delivery to Padrauna and nearby areas is same day; other UP districts take 1-2 working days.",
+    a: "Orders confirmed before 12 PM are typically dispatched same day. Delivery to Padrauna and nearby areas is same day; other  districts take 1-2 working days.",
   },
   {
     q: "Are scheme offers automatically applied?",
@@ -190,7 +189,7 @@ function StarIcon({ filled }: { filled: boolean }) {
    MINI PRODUCT CARD
 ========================================================= */
 
-function MiniProductCard({ product }: { product: (typeof PRODUCTS)[0] }) {
+function MiniProductCard({ product }: { product: Product }) {
   const { navigateToProduct } = useApp();
 
   const disc = Math.round(((product.mrp - product.net) / product.mrp) * 100);
@@ -257,6 +256,70 @@ function MiniProductCard({ product }: { product: (typeof PRODUCTS)[0] }) {
         </span>
       </div>
     </motion.button>
+  );
+}
+
+/* =========================================================
+   HOME SEARCH RESULTS
+========================================================= */
+
+function HomeSearchResults({
+  search,
+  products,
+}: {
+  search: string;
+  products: Product[];
+}) {
+  const q = search.trim().toLowerCase();
+
+  // Same live products collection and same matching logic as Catalogue.
+  const matches = useMemo(() => {
+    return products.filter((p) => {
+      const matchSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.company.toLowerCase().includes(q) ||
+        p.composition.toLowerCase().includes(q);
+
+      return matchSearch;
+    });
+  }, [q, products]);
+
+  return (
+    <div className="mt-7">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-extrabold text-[#1C1C1E]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+            Search results
+          </h3>
+          <p className="mt-0.5 text-xs text-[#6B7280]">
+            {matches.length > 0
+              ? `${matches.length}${matches.length === 12 ? '+' : ''} matching product${matches.length === 1 ? '' : 's'} for "${search}"`
+              : `No products found for "${search}"`}
+          </p>
+        </div>
+      </div>
+
+      {matches.length > 0 ? (
+        <div className="-mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-4 scrollbar-hide">
+          {matches.map((product) => (
+            <div key={product.id} className="snap-start">
+              <MiniProductCard product={product} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-black/[0.05] bg-white px-6 py-10 text-center shadow-[0_3px_16px_rgba(0,0,0,0.04)]">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8F5EE] text-[#0D9A55]">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+          </div>
+          <p className="text-sm font-bold text-[#1C1C1E]">No medicines found</p>
+          <p className="mt-1 text-xs text-[#6B7280]">Try a different medicine name, company, or composition.</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -331,12 +394,20 @@ function AccordionItem({ q, a }: { q: string; a: string }) {
 ========================================================= */
 
 export default function Home() {
-  const { navigate } = useApp();
+  const { navigate, products } = useApp();
+  const [homeSearch, setHomeSearch] = useState("");
 
-  const featured = PRODUCTS.filter((p) => (p.mrp - p.net) / p.mrp > 0.25).slice(
-    0,
-    8,
-  );
+  // Use the same live products collection as Catalogue, so Home always
+  // reflects the current database-backed product data.
+  const featured = useMemo(() => {
+    return products
+      .filter((p) => {
+        const mrp = Number(p.mrp || 0);
+        const net = Number(p.net || 0);
+        return mrp > 0 && (mrp - net) / mrp > 0.25;
+      })
+      .slice(0, 8);
+  }, [products]);
 
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8FAF8]">
@@ -411,7 +482,7 @@ export default function Home() {
                   </span>
 
                   <span className="text-xs font-bold tracking-wide text-[#0D9A55]">
-                    Live Wholesale Rates · Updated Daily
+                    Best Rates · Updated Daily
                   </span>
                 </div>
               </motion.div>
@@ -424,10 +495,10 @@ export default function Home() {
                   fontFamily: "'DM Sans', sans-serif",
                 }}
               >
-                Wholesale Pharma
+                Your Trusted 
                 <br />
                 <span className="relative text-[#0D9A55]">
-                  You Can Trust.
+                  Pharma Partner
                   <motion.span
                     initial={{
                       width: 0,
@@ -449,12 +520,11 @@ export default function Home() {
                 variants={fadeUp}
                 className="mb-8 max-w-xl text-base leading-7 text-[#6B7280] sm:text-lg"
               >
-                Direct wholesale rates for registered pharmacies across Eastern
-                UP.{" "}
-                <span className="font-semibold text-[#374151]">
-                  500+ products
+                Best Price for Pharmacies across India. {" "}
+                <span className="font-semibold text-[#74777b]">
+                  250+ products
                 </span>
-                , genuine stock, and same-day dispatch from Padrauna.
+                , genuine stock, and same-day dispatch.
               </motion.p>
 
               {/* Buttons */}
@@ -518,9 +588,9 @@ export default function Home() {
                 className="mt-7 flex flex-wrap gap-x-6 gap-y-2"
               >
                 {[
-                  "Genuine stock",
-                  "Wholesale pricing",
-                  "Same-day dispatch",
+                  "Genuine Stock",
+                  "Best Price",
+                  "Same-Day Dispatch",
                 ].map((item) => (
                   <span
                     key={item}
@@ -580,7 +650,7 @@ export default function Home() {
                 className="absolute right-10 top-5 flex h-11 w-24 items-center justify-center rounded-full bg-[#0D9A55] shadow-[0_8px_25px_rgba(13,154,85,0.3)]"
               >
                 <span className="text-xs font-bold text-white">
-                  500+ Products
+                  250+ Products
                 </span>
               </motion.div>
 
@@ -721,7 +791,7 @@ export default function Home() {
                   <p className="text-xs font-bold text-[#1C1C1E]">
                     Same-day dispatch
                   </p>
-                  <p className="text-[10px] text-[#9CA3AF]">From Padrauna</p>
+                  <p className="text-[10px] text-[#9CA3AF]">From Uttar Pradesh</p>
                 </div>
               </motion.div>
 
@@ -746,7 +816,7 @@ export default function Home() {
           TRUST STRIP
       ====================================================== */}
 
-      <section className="relative overflow-hidden bg-[#0D9A55]">
+      {/* <section className="relative overflow-hidden bg-[#0D9A55]">
         <motion.div
           animate={{
             x: ["-10%", "110%"],
@@ -772,11 +842,11 @@ export default function Home() {
           >
             {[
               {
-                num: "500+",
+                num: "250+",
                 label: "Products In Stock",
               },
               {
-                num: "200+",
+                num: "100+",
                 label: "Retail Pharmacies",
               },
               {
@@ -812,6 +882,95 @@ export default function Home() {
             ))}
           </motion.div>
         </div>
+      </section> */}
+
+      {/* =====================================================
+          HOME PRODUCT SEARCH
+      ====================================================== */}
+
+      <section className="relative overflow-hidden bg-[#F8FAF8] border-b border-black/[0.05]">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={fadeUp}
+            className="mb-7"
+          >
+            <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#0D9A55]">
+              Find Your Medicine
+            </p>
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+              <div>
+                <h2
+                  className="text-2xl font-extrabold tracking-tight text-[#1C1C1E] sm:text-3xl"
+                  style={{ fontFamily: "'DM Sans', sans-serif" }}
+                >
+                  Search medicines instantly
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
+                  Search by medicine name, company, or composition — results update with every letter.
+                </p>
+              </div>
+              <button
+                onClick={() => navigate("catalogue")}
+                className="group flex shrink-0 items-center gap-1 text-sm font-bold text-[#0D9A55]"
+              >
+                View full catalogue
+                <svg className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m13.5 4.5 7.5 7.5m0 0-7.5 7.5M21 12H3" />
+                </svg>
+              </button>
+            </div>
+          </motion.div>
+
+          <div className="relative max-w-3xl">
+            <svg className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            <input
+              type="text"
+              value={homeSearch}
+              onChange={(e) => setHomeSearch(e.target.value)}
+              placeholder="Search by medicine name, company, or composition..."
+              className="w-full rounded-2xl border border-black/[0.08] bg-white py-4 pl-12 pr-12 text-sm shadow-[0_4px_20px_rgba(0,0,0,0.05)] outline-none transition-all placeholder:text-[#9CA3AF] focus:border-[#0D9A55] focus:ring-2 focus:ring-[#0D9A55]/20"
+            />
+            {homeSearch && (
+              <button
+                type="button"
+                onClick={() => setHomeSearch("")}
+                aria-label="Clear search"
+                className="absolute right-4 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#F5F7F5] text-[#6B7280] transition-colors hover:bg-[#E8F5EE] hover:text-[#0D9A55]"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {homeSearch.trim() ? (
+            <HomeSearchResults search={homeSearch} products={products} />
+          ) : (
+            <div className="mt-7">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-extrabold text-[#1C1C1E]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                    Popular medicines
+                  </h3>
+                  <p className="mt-0.5 text-xs text-[#9CA3AF]">Browse a few products before you search</p>
+                </div>
+              </div>
+              <div className="-mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-4 scrollbar-hide">
+                {featured.map((product) => (
+                  <div key={product.id} className="snap-start">
+                    <MiniProductCard product={product} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* =====================================================
@@ -840,9 +999,9 @@ export default function Home() {
                 fontFamily: "'DM Sans', sans-serif",
               }}
             >
-              Every category,
+              Every Category,
               <br />
-              <span className="text-[#0D9A55]">wholesale rates.</span>
+              <span className="text-[#0D9A55]">Best Rates.</span>
             </h2>
 
             <button
@@ -967,7 +1126,7 @@ export default function Home() {
 
             <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-[#6B7280]">
               From finding the right medicine to getting it dispatched, we keep
-              wholesale ordering simple.
+               ordering simple.
             </p>
           </motion.div>
 
@@ -1108,9 +1267,9 @@ export default function Home() {
                 fontFamily: "'DM Sans', sans-serif",
               }}
             >
-              Trusted by pharmacies
+              Trusted by Pharmacies
               <br />
-              <span className="text-[#0D9A55]">across Eastern UP</span>
+              <span className="text-[#0D9A55]">across Whole India</span>
             </h2>
           </motion.div>
 
@@ -1198,14 +1357,13 @@ export default function Home() {
                 fontFamily: "'DM Sans', sans-serif",
               }}
             >
-              The distributor that
+              The Distributor that
               <br />
-              <span className="text-[#0D9A55]">treats you like a partner.</span>
+              <span className="text-[#0D9A55]">treats you like a Partner.</span>
             </h2>
 
             <p className="mb-7 max-w-xl leading-7 text-[#6B7280]">
-              Since 1998, we have served retail pharmacies across Kushinagar,
-              Gorakhpur, Deoria, and surrounding districts with genuine branded
+              Since 1998, we have served retail pharmacies across Whole India in every state with genuine branded
               medicines at fair net rates.
             </p>
 
@@ -1252,7 +1410,7 @@ export default function Home() {
               {
                 icon: "₹",
                 title: "Competitive Net Rates",
-                desc: "Wholesale rates revised weekly. Best rates on bulk orders for regular retailers.",
+                desc: "Rates revised weekly. Best rates on bulk orders for regular retailers.",
               },
               {
                 icon: "⚡",
@@ -1427,7 +1585,7 @@ export default function Home() {
               <span className="h-1.5 w-1.5 rounded-full bg-white" />
 
               <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/90">
-                Your trusted wholesale partner
+                Your trusted Pharma partner
               </span>
             </motion.div>
 
@@ -1500,7 +1658,7 @@ export default function Home() {
               className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-white/60"
             >
               <span>✓ Free registration</span>
-              <span>✓ Wholesale pricing</span>
+              <span>✓ Best pricing</span>
               <span>✓ Same-day dispatch</span>
             </motion.div>
           </motion.div>
