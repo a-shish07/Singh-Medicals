@@ -148,31 +148,26 @@ function calculateProductPricing({
 app.disable('x-powered-by');
 app.set('trust proxy', isProduction ? 1 : false);
 
-const allowedOrigins = String(
-  process.env.CORS_ORIGIN || 'http://localhost:8443'
-)
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow server-to-server requests and local tools with no Origin header.
-      if (!origin) {
-        return callback(null, true);
-      }
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost:8443",
+      "http://localhost:5173",
+      "https://singh-medical-one.vercel.app",
+      "https://www.singhmedical.in",
+      "https://singhmedical.in",
+    ];
 
-      return callback(
-        new Error('CORS origin not allowed.')
-      );
-    },
-  })
-);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS origin not allowed."));
+    }
+  },
+  credentials: true,
+}));
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
