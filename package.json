@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",
-    "@types/nodemailer": "^8.0.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "csv-parse": "^7.0.2",
@@ -27,9 +26,9 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.41.0",
     "multer": "^2.3.0",
-    "nodemailer": "^10.0.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^6.28.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

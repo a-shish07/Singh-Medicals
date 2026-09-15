@@ -185,14 +185,14 @@ const {
                 {selectedOrder.trackingId && <p className="text-xs text-[#0D9A55]">Current: {selectedOrder.deliveryPartner} — {selectedOrder.trackingId}</p>}
                                 <button
                onClick={() => sendTracking(selectedOrder.id)}
-                 disabled={ selectedOrder.status === 'CANCELLED' ||
+                  disabled={ selectedOrder.status === 'Cancelled' ||
   !trackingId.trim() ||
   !deliveryPartner.trim() ||
   sendingTracking
 }
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-[#0D9A55] text-white text-sm font-bold hover:bg-[#0B8548] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                 {selectedOrder.status === 'CANCELLED'
+                  {selectedOrder.status === 'Cancelled'
   ? 'Tracking Unavailable for Cancelled Order'
   : sendingTracking
     ? 'Sending…'

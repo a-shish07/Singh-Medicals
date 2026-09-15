@@ -4,7 +4,7 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { parse } from 'csv-parse/sync';
 import prismaPackage from '@prisma/client';
 
@@ -394,23 +394,22 @@ const escapeHtml = (value) => cleanString(value)
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#039;');
 
-const mailer = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
-  ? nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    })
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
   : null;
-const mailFrom = process.env.SMTP_FROM || process.env.SMTP_USER;
+const mailFrom = process.env.RESEND_FROM_EMAIL;
 const adminMail = process.env.ORDER_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL;
 
 const sendMail = async (message) => {
-  if (!mailer || !mailFrom) {
-    console.warn('Email not sent: SMTP is not configured.');
+  if (!resend || !mailFrom) {
+    console.warn('Email not sent: Resend is not configured.');
     return;
   }
-  await mailer.sendMail({ from: mailFrom, ...message });
+  const { error } = await resend.emails.send({
+    from: mailFrom,
+    ...message,
+  });
+  if (error) throw new Error(error.message);
 };
 
 const orderLinesHtml = (order) => (order.items || []).map((item) =>
@@ -1008,9 +1007,7 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
       }
     );
 
-    void sendOrderEmails(order, req.user).catch((error) =>
-      console.error('Order email delivery failed:', error.message)
-    );
+    await sendOrderEmails(order, req.user);
 
     res.status(201).json(
       serializeOrder(order)
@@ -2895,11 +2892,11 @@ app.use(
   }
 );
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(
-    `API listening on port ${port}`
-  );
-});
+if (!process.env.VERCEL) {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`API listening on port ${port}`);
+  });
+}
 
 process.on('SIGINT', async () => {
   await prisma.$disconnect();
@@ -2910,3 +2907,5 @@ process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+export default app;
