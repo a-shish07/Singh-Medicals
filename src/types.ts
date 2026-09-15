@@ -14,6 +14,9 @@ export interface Product {
   net: number;
   expiry: string;
   stock?: number;
+  minOrderQuantity?: number;
+  stockStrips?: number;
+  stripsPerBox?: number | null;
   isActive?: boolean;
   medicineType?: string;
 productType?: string;
@@ -31,7 +34,8 @@ discountType?: string;
 discountValue?: number;
 discountAmount?: number;
 buyQuantity?: number | null;
-freeQuantity?: number | null;
+  freeQuantity?: number | null;
+  bonusProductId?: string | null;
 
 inventorySummary?: {
   totalQuantity: number;

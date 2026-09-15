@@ -44,6 +44,50 @@ if (!jwtSecret || jwtSecret.length < 32) {
 
 const PTR_FACTOR = 0.7619;
 const DEFAULT_GST = 5;
+const SHIPPING_FEE = 45;
+const FREE_SHIPPING_OVER = 4000;
+const money = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+// Numeric pack labels specify strips per box. Any other non-empty pack label
+// is valid and is handled as one sellable unit for quantity calculations.
+function stripsPerBox(pack) {
+  const text = cleanString(pack);
+  if (!text) return null;
+  const multiplied = text.match(/[x×]\s*(\d+(?:\.0+)?)/i);
+  const bare = text.match(/^\s*(\d+(?:\.0+)?)\s*$/);
+  const value = Number(multiplied?.[1] || bare?.[1]);
+  return Number.isInteger(value) && value > 0 ? value : 1;
+}
+function stockInStrips(pack, boxes) {
+  const quantity = Number(boxes);
+  if (!Number.isInteger(quantity) || quantity < 0) throw new Error('Stock must be a non-negative whole number.');
+  return quantity;
+}
+
+const hasBonus = (type) => [
+  DiscountType.SAME_PRODUCT_BONUS, DiscountType.DIFFERENT_PRODUCT_BONUS,
+  DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT, DiscountType.DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT,
+].includes(type);
+const hasSameProductBonus = (type) => [DiscountType.SAME_PRODUCT_BONUS, DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT].includes(type);
+const hasPtrDiscount = (type) => [DiscountType.DISCOUNT_ON_PTR, DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT, DiscountType.DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT].includes(type);
+
+function calculateOrderLine(product, boxes) {
+  const strips = stripsPerBox(product.pack);
+  if (!strips) throw new Error(`${product.name} has an invalid pack size.`);
+  const paidBoxes = Math.floor(Number(boxes));
+  if (!Number.isInteger(paidBoxes) || paidBoxes < 1) throw new Error(`Quantity for ${product.name} must be a positive whole number of boxes.`);
+  // MRP/PTR and customer quantities are per strip. Pack size only describes
+  // physical packing; offers and inventory consumption are strip-based.
+  const ptr = Number(product.mrp) * PTR_FACTOR;
+  const pricePerPaidStrip = ptr * (hasPtrDiscount(product.discountType) ? 1 - Number(product.discountValue || 0) / 100 : 1);
+  const paidStrips = paidBoxes;
+  const configuredBonus = hasBonus(product.discountType);
+  if (configuredBonus && (!(Number(product.buyQuantity) > 0) || !(Number(product.freeQuantity) > 0))) throw new Error(`${product.name} has an invalid offer configuration.`);
+  const freeStrips = configuredBonus ? Math.floor(paidStrips / Number(product.buyQuantity)) * Number(product.freeQuantity) : 0;
+  const sameProductFree = hasSameProductBonus(product.discountType) ? freeStrips : 0;
+  const taxableAmount = money(pricePerPaidStrip * paidStrips);
+  return { paidBoxes, stripsPerBox: strips, paidStrips, freeStrips: sameProductFree, bonusStrips: hasSameProductBonus(product.discountType) ? 0 : freeStrips, totalStrips: paidStrips + sameProductFree, pricePerPaidBox: money(pricePerPaidStrip * strips), pricePerPaidStrip: money(pricePerPaidStrip), taxableAmount };
+}
 
 function calculateProductPricing({
   mrp,
@@ -71,48 +115,18 @@ function calculateProductPricing({
 
   const ptr = Number((parsedMrp * PTR_FACTOR).toFixed(2));
 
-  let bonusAdjustedPtr = ptr;
-
-  const usesSameProductBonus =
-    discountType === DiscountType.SAME_PRODUCT_BONUS ||
-    discountType ===
-      DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT;
-
-  const usesDiscount =
-    discountType === DiscountType.DISCOUNT_ON_PTR ||
-    discountType ===
-      DiscountType.SAME_PRODUCT_BONUS_AND_DISCOUNT ||
-    discountType ===
-      DiscountType.DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT;
-
-  if (usesSameProductBonus) {
+  const usesBonus = hasBonus(discountType);
+  const usesDiscount = hasPtrDiscount(discountType);
+  if (usesBonus) {
     if (parsedBuy <= 0 || parsedFree <= 0) {
       throw new Error(
         'Buy quantity and free quantity are required for a same-product bonus.'
       );
     }
 
-    bonusAdjustedPtr =
-      ptr *
-      (parsedBuy / (parsedBuy + parsedFree));
   }
-
-  const roundedBonusAdjustedPtr = Number(
-  bonusAdjustedPtr.toFixed(2)
-);
-
-const discountAmount = usesDiscount
-  ? Number(
-      (roundedBonusAdjustedPtr * (parsedDiscount / 100)).toFixed(2)
-    )
-  : 0;
-
-const effectivePtr = Math.max(
-  0,
-  Number(
-    (roundedBonusAdjustedPtr - discountAmount).toFixed(2)
-  )
-);
+  const discountAmount = usesDiscount ? Number((ptr * (parsedDiscount / 100)).toFixed(2)) : 0;
+  const effectivePtr = Math.max(0, Number((ptr - discountAmount).toFixed(2)));
 
   return {
     mrp: Number(parsedMrp.toFixed(2)),
@@ -122,10 +136,10 @@ const effectivePtr = Math.max(
     discountValue: Number(parsedDiscount.toFixed(2)),
     discountAmount: Number(discountAmount.toFixed(2)),
     effectivePtr,
-    buyQuantity: usesSameProductBonus
+    buyQuantity: usesBonus
       ? Math.max(0, Math.floor(parsedBuy))
       : null,
-    freeQuantity: usesSameProductBonus
+    freeQuantity: usesBonus
       ? Math.max(0, Math.floor(parsedFree))
       : null,
   };
@@ -361,6 +375,9 @@ const serializeProduct = (product) => {
     mrp: Number(product.mrp),
     net: Number(product.net),
     stock: Number(product.stock || 0),
+    stockStrips: Number(product.stock || 0),
+    stripsPerBox: stripsPerBox(product.pack),
+    minOrderQuantity: Math.max(1, Number(product.minOrderQuantity || 1)),
     inventoryBatches: batches,
     inventorySummary: {
       totalQuantity,
@@ -373,6 +390,9 @@ const serializeProduct = (product) => {
 const serializeOrder = (order) => ({
   ...order,
   subtotal: Number(order.subtotal),
+  gstTotal: Number(order.gstTotal || 0),
+  shippingTotal: Number(order.shippingTotal || 0),
+  grandTotal: Number(order.grandTotal || order.subtotal),
   items: (order.items || []).map((item) => ({
     ...item,
     unitPrice: Number(item.unitPrice),
@@ -805,15 +825,14 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
       });
     }
 
-    const normalizedItems = items
-      .map((item) => ({
-        productId: cleanString(item.productId),
-        quantity: Math.max(
-          1,
-          Number(item.quantity) || 1
-        ),
-      }))
-      .filter((item) => item.productId);
+    const merged = new Map();
+    for (const item of items) {
+      const productId = cleanString(item.productId);
+      const quantity = Number(item.quantity);
+      if (!productId || !Number.isInteger(quantity) || quantity < 1) continue;
+      merged.set(productId, (merged.get(productId) || 0) + quantity);
+    }
+    const normalizedItems = [...merged].map(([productId, quantity]) => ({ productId, quantity }));
 
     if (!normalizedItems.length) {
       return res.status(400).json({
@@ -852,6 +871,7 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
       ])
     );
 
+    const lines = [];
     for (const item of normalizedItems) {
       const product = byId.get(item.productId);
 
@@ -861,37 +881,32 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
         });
       }
 
-      if (
-        Number(product.stock || 0) <
-        item.quantity
-      ) {
-        return res.status(400).json({
-          error: `Insufficient stock for ${product.name}.`,
-        });
+      const line = { product, ...calculateOrderLine(product, item.quantity) };
+      if (line.paidStrips < Math.max(1, Number(product.minOrderQuantity || 1))) {
+        return res.status(400).json({ error: `${product.name} has a minimum order quantity of ${product.minOrderQuantity} strips.` });
+      }
+      lines.push(line);
+    }
+    // A product's stock is stored in strips. The admin enters boxes; the API
+    // converts that input on save/import, allowing bonus strips to be consumed.
+    const requiredStock = new Map();
+    for (const line of lines) {
+      requiredStock.set(line.product.id, (requiredStock.get(line.product.id) || 0) + line.totalStrips);
+      if (line.bonusStrips) {
+        if (!line.product.bonusProductId) return res.status(400).json({ error: `${line.product.name} needs a bonus product.` });
+        requiredStock.set(line.product.bonusProductId, (requiredStock.get(line.product.bonusProductId) || 0) + line.bonusStrips);
       }
     }
-
-    // Snapshot the customer's actual selling price at order time.
-    // Prefer Effective PTR and fall back to legacy net for older records.
-    const effectivePrice = (product) => {
-      const value = product.effectivePtr;
-      return Number.isFinite(Number(value))
-        ? Number(value)
-        : Number(product.net || 0);
-    };
-
-    const total = normalizedItems.reduce(
-      (sum, item) => {
-        const product = byId.get(item.productId);
-
-        return (
-          sum +
-          effectivePrice(product) *
-            item.quantity
-        );
-      },
-      0
-    );
+    const stockProducts = await prisma.product.findMany({ where: { id: { in: [...requiredStock.keys()] }, isActive: true } });
+    const stockById = new Map(stockProducts.map(product => [product.id, product]));
+    for (const [id, required] of requiredStock) {
+      const product = stockById.get(id);
+      if (!product || Number(product.stock) < required) return res.status(400).json({ error: `Insufficient stock for ${product?.name || 'a bonus product'}.` });
+    }
+    const subtotal = money(lines.reduce((sum, line) => sum + line.taxableAmount, 0));
+    const gstTotal = money(subtotal * DEFAULT_GST / 100);
+    const shippingTotal = subtotal > FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
+    const grandTotal = money(subtotal + gstTotal + shippingTotal);
 
     const safePaymentMethod =
       paymentMethod === PaymentMethod.COD
@@ -919,33 +934,21 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
                 deliveryPhone.trim(),
               deliveryAddress:
                 deliveryAddress.trim(),
-              subtotal: total,
+              subtotal,
+              gstTotal,
+              shippingTotal,
+              grandTotal,
               paymentMethod:
                 safePaymentMethod,
 
               items: {
                 create:
-                  normalizedItems.map(
-                    (item) => {
-                      const product =
-                        byId.get(
-                          item.productId
-                        );
-
-                      return {
-                        productId:
-                          product.id,
-                        productName:
-                          product.name,
-                        // Store a historical price snapshot.
-                        // Future product-price changes must not alter this order.
-                        unitPrice:
-                          effectivePrice(product),
-                        quantity:
-                          item.quantity,
-                      };
-                    }
-                  ),
+                  lines.flatMap((line) => {
+                    const paid = { productId: line.product.id, productName: line.product.name, unitPrice: line.pricePerPaidStrip, quantity: line.paidStrips, paidQuantity: line.paidStrips, freeQuantity: line.freeStrips, totalQuantity: line.totalStrips, stripsPerBox: line.stripsPerBox, isFree: false };
+                    if (!line.bonusStrips) return [paid];
+                    const bonus = stockById.get(line.product.bonusProductId);
+                    return [...[paid], { productId: bonus.id, productName: bonus.name, unitPrice: 0, quantity: 0, paidQuantity: 0, freeQuantity: line.bonusStrips, totalQuantity: line.bonusStrips, stripsPerBox: stripsPerBox(bonus.pack) || 1, isFree: true }];
+                  }),
               },
 
               statusHistory: {
@@ -967,24 +970,24 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
         // Deduct stock atomically inside the same transaction.
         // The stock check is repeated at the database update level so
         // concurrent orders cannot drive Product.stock below zero.
-        for (const item of normalizedItems) {
+        for (const [productId, required] of requiredStock) {
           const updated = await tx.product.updateMany({
             where: {
-              id: item.productId,
+              id: productId,
               stock: {
-                gte: item.quantity,
+                gte: required,
               },
             },
             data: {
               stock: {
-                decrement: item.quantity,
+                decrement: required,
               },
             },
           });
 
           if (updated.count !== 1) {
             throw new Error(
-              `Insufficient stock for ${byId.get(item.productId).name}.`
+              `Insufficient stock while placing this order.`
             );
           }
         }
@@ -1209,6 +1212,8 @@ app.post(
         discountValue = 0,
         buyQuantity = 0,
         freeQuantity = 0,
+        bonusProductId,
+        minOrderQuantity = 1,
         expiry,
         stock,
         isActive,
@@ -1226,6 +1231,7 @@ app.post(
             'Name, company, composition, category and pack are required.',
         });
       }
+      if (!Number.isInteger(Number(minOrderQuantity)) || Number(minOrderQuantity) < 1) return res.status(400).json({ error: 'Minimum order quantity must be a positive whole number of strips.' });
 
       let pricing;
       try {
@@ -1240,6 +1246,11 @@ app.post(
         return res.status(400).json({
           error: error?.message || 'Invalid pricing details.',
         });
+      }
+
+      if (hasBonus(pricing.discountType) && !hasSameProductBonus(pricing.discountType)) {
+        if (!bonusProductId?.trim()) return res.status(400).json({ error: 'Select a bonus product for a different-product offer.' });
+        if (!await prisma.product.findUnique({ where: { id: bonusProductId.trim() }, select: { id: true } })) return res.status(400).json({ error: 'Selected bonus product does not exist.' });
       }
 
       const parsedExpiry = parseDate(expiry);
@@ -1277,10 +1288,12 @@ app.post(
           effectivePtr: pricing.effectivePtr,
           buyQuantity: pricing.buyQuantity,
           freeQuantity: pricing.freeQuantity,
+          bonusProductId: bonusProductId?.trim() || null,
           net: pricing.effectivePtr,
 
           expiry: parsedExpiry,
-          stock: Math.max(0, Number(stock) || 0),
+          stock: stockInStrips(pack, stock ?? 0),
+          minOrderQuantity: Number(minOrderQuantity),
           isActive: isActive !== false,
         },
         include: { inventoryBatches: true },
@@ -1328,6 +1341,8 @@ app.patch(
         discountValue = 0,
         buyQuantity = 0,
         freeQuantity = 0,
+        bonusProductId,
+        minOrderQuantity = 1,
         expiry,
         stock,
         isActive,
@@ -1345,6 +1360,7 @@ app.patch(
             'Name, company, composition, category and pack are required.',
         });
       }
+      if (!Number.isInteger(Number(minOrderQuantity)) || Number(minOrderQuantity) < 1) return res.status(400).json({ error: 'Minimum order quantity must be a positive whole number of strips.' });
 
       let pricing;
       try {
@@ -1359,6 +1375,10 @@ app.patch(
         return res.status(400).json({
           error: error?.message || 'Invalid pricing details.',
         });
+      }
+      if (hasBonus(pricing.discountType) && !hasSameProductBonus(pricing.discountType)) {
+        if (!bonusProductId?.trim()) return res.status(400).json({ error: 'Select a bonus product for a different-product offer.' });
+        if (!await prisma.product.findUnique({ where: { id: bonusProductId.trim() }, select: { id: true } })) return res.status(400).json({ error: 'Selected bonus product does not exist.' });
       }
 
       const parsedExpiry = parseDate(expiry);
@@ -1401,10 +1421,12 @@ app.patch(
           effectivePtr: pricing.effectivePtr,
           buyQuantity: pricing.buyQuantity,
           freeQuantity: pricing.freeQuantity,
+          bonusProductId: bonusProductId?.trim() || null,
           net: pricing.effectivePtr,
 
           expiry: parsedExpiry,
-          stock: Math.max(0, Number(stock) || 0),
+          stock: stockInStrips(pack, stock ?? 0),
+          minOrderQuantity: Number(minOrderQuantity),
           isActive: isActive !== false,
         },
         include: {
@@ -2553,7 +2575,7 @@ app.post(
 
 /* ============================================================================
    ADMIN - INVENTORY CSV IMPORT
-============================================================================ */
+   ============================================================================ */
 
 app.post(
   '/api/admin/inventory/import',
@@ -2581,8 +2603,8 @@ app.post(
         });
       }
 
-      // New pricing-driven import format.
-      // SKU, Batch Number, PTR and GST are deliberately not input fields.
+      // CSV contract used by the Inventory Import screen.
+      // SKU, Batch Number, PTR and GST are generated/calculated by the API.
       const requiredHeaders = [
         'Product Name',
         'Composition',
@@ -2593,11 +2615,18 @@ app.post(
         'Pack Size',
         'Quantity',
         'MRP',
+        'Min Order Quantity',
         'Discount Type',
         'Discount %',
         'Offer Buy Quantity',
         'Offer Free Quantity',
+        'Bonus Product',
         'Expiry Date',
+        'Barcode',
+        'Prescription Required',
+        'Country of Origin',
+        'Image',
+        'Description',
       ];
 
       const actualHeaders = Object.keys(rows[0]);
@@ -2616,6 +2645,7 @@ app.post(
       let createdBatches = 0;
       let updatedBatches = 0;
       const errors = [];
+      const pendingBonusLinks = [];
 
       for (const [index, row] of rows.entries()) {
         try {
@@ -2629,15 +2659,33 @@ app.post(
 
           const quantity = Number(row['Quantity']);
           const mrp = Number(row['MRP']);
+          const minOrderQuantity = Number(row['Min Order Quantity']);
+
           const discountTypeRaw = cleanString(row['Discount Type']).toUpperCase();
+          const discountType = discountTypeRaw || DiscountType.NONE;
+
           const discountValue = Number(row['Discount %'] || 0);
           const buyQuantity = Number(row['Offer Buy Quantity'] || 0);
           const freeQuantity = Number(row['Offer Free Quantity'] || 0);
-          const expiryDate = parseDate(row['Expiry Date']);
+          const bonusProductName = cleanString(row['Bonus Product']);
 
-          const discountType = Object.values(DiscountType).includes(discountTypeRaw)
-            ? discountTypeRaw
-            : DiscountType.NONE;
+          const barcode = cleanString(row['Barcode']) || null;
+          const countryOfOrigin = cleanString(row['Country of Origin']) || null;
+
+          const prescriptionRaw = cleanString(row['Prescription Required']).toLowerCase();
+          if (prescriptionRaw && !['true', 'yes', '1', 'false', 'no', '0'].includes(prescriptionRaw)) {
+            throw new Error('Prescription Required must be Yes/No or True/False.');
+          }
+          const prescriptionRequired = ['true', 'yes', '1'].includes(prescriptionRaw);
+
+          const image = cleanString(row['Image']) || null;
+          const description = cleanString(row['Description']) || null;
+
+          // Blank Expiry Date defaults to 12/12/2030.
+          const expiryRaw = cleanString(row['Expiry Date']);
+          const expiryDate = expiryRaw
+            ? parseDate(expiryRaw)
+            : new Date('2030-12-12T00:00:00.000Z');
 
           if (
             !productName ||
@@ -2648,19 +2696,64 @@ app.post(
             !productType ||
             !pack
           ) {
-            throw new Error('Missing required product fields');
+            throw new Error(
+              'Product Name, Composition, Company, Category, Medicine Type, Product Type and Pack Size are required.'
+            );
           }
 
-          if (!Number.isFinite(quantity) || quantity < 0) {
-            throw new Error('Quantity must be a valid non-negative number');
+          if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 0) {
+            throw new Error('Quantity must be a valid non-negative whole number.');
+          }
+
+          if (!Number.isFinite(mrp) || mrp < 0) {
+            throw new Error('MRP must be a valid non-negative number.');
+          }
+
+          if (!Number.isFinite(minOrderQuantity) || !Number.isInteger(minOrderQuantity) || minOrderQuantity < 1) {
+            throw new Error('Min Order Quantity must be a positive whole number.');
           }
 
           if (!expiryDate) {
-            throw new Error('Expiry Date is invalid');
+            throw new Error('Expiry Date is invalid.');
           }
 
           if (expiryDate < new Date()) {
-            throw new Error('Expiry Date cannot be in the past');
+            throw new Error('Expiry Date cannot be in the past.');
+          }
+
+          if (!Object.values(DiscountType).includes(discountType)) {
+            throw new Error(`Invalid Discount Type: ${discountTypeRaw}`);
+          }
+
+          if (!Number.isFinite(discountValue) || discountValue < 0 || discountValue > 100) {
+            throw new Error('Discount % must be between 0 and 100.');
+          }
+
+          const bonusOffer = hasBonus(discountType);
+          const sameProductOffer = hasSameProductBonus(discountType);
+          const ptrDiscountOffer = hasPtrDiscount(discountType);
+
+          if (bonusOffer) {
+            if (!Number.isFinite(buyQuantity) || !Number.isInteger(buyQuantity) || buyQuantity < 1) {
+              throw new Error('Offer Buy Quantity must be a positive whole number for bonus offers.');
+            }
+            if (!Number.isFinite(freeQuantity) || !Number.isInteger(freeQuantity) || freeQuantity < 1) {
+              throw new Error('Offer Free Quantity must be a positive whole number for bonus offers.');
+            }
+          } else if (buyQuantity !== 0 || freeQuantity !== 0 || bonusProductName) {
+            throw new Error('Buy quantity, free quantity and bonus product must be blank/zero when no bonus offer is selected.');
+          }
+
+          if (sameProductOffer && bonusProductName) {
+            throw new Error('Bonus Product must be blank for a same-product offer.');
+          }
+
+          if (!bonusOffer && !ptrDiscountOffer && discountValue !== 0) {
+            throw new Error('Discount % must be 0 when no discount offer is selected.');
+          }
+
+          if (bonusOffer && !sameProductOffer && !bonusProductName) {
+            throw new Error('Bonus Product is required for a different-product offer.');
           }
 
           let pricing;
@@ -2673,17 +2766,17 @@ app.post(
               freeQuantity,
             });
           } catch (error) {
-            throw new Error(error?.message || 'Invalid pricing details');
+            throw new Error(error?.message || 'Invalid pricing details.');
           }
 
-          const barcode = cleanString(row['Barcode']) || null;
-          const countryOfOrigin = cleanString(row['Country of Origin']) || null;
-          const prescriptionRequired = ['true', 'yes', '1'].includes(
-            cleanString(row['Prescription Required']).toLowerCase()
-          );
-          const image = cleanString(row['Image']) || null;
-          const description = cleanString(row['Description']) || null;
-          // Internal identifiers are generated and never shown/entered in CSV.
+          // Discount is applied to PTR first. For a same-product bonus,
+          // the effective received-unit price is then spread across paid + free units.
+          // A different-product bonus remains free and therefore does not reduce
+          // the source product's own selling price.
+          const csvEffectivePtr = sameProductOffer
+            ? money(pricing.effectivePtr * buyQuantity / (buyQuantity + freeQuantity))
+            : pricing.effectivePtr;
+
           const generatedBatchNumber =
             `AUTO-IMPORT-${index + 1}-${expiryDate.toISOString().slice(0, 10)}`;
 
@@ -2720,12 +2813,14 @@ app.post(
                   discountType: pricing.discountType,
                   discountValue: pricing.discountValue,
                   discountAmount: pricing.discountAmount,
-                  effectivePtr: pricing.effectivePtr,
+                  effectivePtr: csvEffectivePtr,
                   buyQuantity: pricing.buyQuantity,
                   freeQuantity: pricing.freeQuantity,
-                  net: pricing.effectivePtr,
+                  bonusProductId: null,
+                  net: csvEffectivePtr,
                   expiry: expiryDate,
                   stock: quantity,
+                  minOrderQuantity,
                   isActive: true,
                 },
               });
@@ -2738,6 +2833,7 @@ app.post(
                   category,
                   medicineType,
                   productType,
+                  pack,
                   countryOfOrigin,
                   barcode,
                   prescriptionRequired,
@@ -2749,11 +2845,13 @@ app.post(
                   discountType: pricing.discountType,
                   discountValue: pricing.discountValue,
                   discountAmount: pricing.discountAmount,
-                  effectivePtr: pricing.effectivePtr,
+                  effectivePtr: csvEffectivePtr,
                   buyQuantity: pricing.buyQuantity,
                   freeQuantity: pricing.freeQuantity,
-                  net: pricing.effectivePtr,
+                  bonusProductId: null,
+                  net: csvEffectivePtr,
                   expiry: expiryDate,
+                  minOrderQuantity,
                   isActive: true,
                 },
               });
@@ -2798,11 +2896,8 @@ app.post(
               },
             });
 
-            if (existingBatch) {
-              updatedBatches++;
-            } else {
-              createdBatches++;
-            }
+            if (existingBatch) updatedBatches++;
+            else createdBatches++;
 
             const allBatches = await tx.inventoryBatch.findMany({
               where: { productId: product.id },
@@ -2817,7 +2912,6 @@ app.post(
 
             const primaryBatch = allBatches[0];
 
-            // Keep stock/expiry synchronized, but DO NOT derive pricing from batches.
             await tx.product.update({
               where: { id: product.id },
               data: {
@@ -2825,11 +2919,62 @@ app.post(
                 ...(primaryBatch ? { expiry: primaryBatch.expiryDate } : {}),
               },
             });
+
+            if (bonusOffer && !sameProductOffer) {
+              pendingBonusLinks.push({
+                row: index + 2,
+                sourceProductId: product.id,
+                bonusProductName,
+              });
+            }
           });
         } catch (error) {
           errors.push({
             row: index + 2,
             error: error?.message || 'Import failed',
+          });
+        }
+      }
+
+      // Resolve different-product bonus references after all CSV rows have been
+      // imported. This allows a bonus product to appear later in the same CSV.
+      for (const link of pendingBonusLinks) {
+        try {
+          const bonusProduct = await prisma.product.findFirst({
+            where: {
+              name: {
+                equals: link.bonusProductName,
+                mode: 'insensitive',
+              },
+              isActive: true,
+            },
+            select: { id: true, name: true },
+          });
+
+          if (!bonusProduct) {
+            errors.push({
+              row: link.row,
+              error: `Bonus Product "${link.bonusProductName}" was not found. Import/create the bonus product first.`,
+            });
+            continue;
+          }
+
+          if (bonusProduct.id === link.sourceProductId) {
+            errors.push({
+              row: link.row,
+              error: 'Bonus Product cannot be the same product for a different-product offer.',
+            });
+            continue;
+          }
+
+          await prisma.product.update({
+            where: { id: link.sourceProductId },
+            data: { bonusProductId: bonusProduct.id },
+          });
+        } catch (error) {
+          errors.push({
+            row: link.row,
+            error: error?.message || 'Unable to resolve bonus product.',
           });
         }
       }

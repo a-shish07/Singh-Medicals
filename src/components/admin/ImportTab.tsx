@@ -27,10 +27,12 @@ export default function ImportTab() {
     'Pack Size',
     'Quantity',
     'MRP',
+    'Min Order Quantity',
     'Discount Type',
     'Discount %',
     'Offer Buy Quantity',
     'Offer Free Quantity',
+    'Bonus Product',
     'Expiry Date',
     'Barcode',
     'Prescription Required',
@@ -39,10 +41,15 @@ export default function ImportTab() {
     'Description',
   ];
 
+  // Template examples cover every supported offer type.
+  // Bonus Product names below intentionally reference another sample product.
   const SAMPLE_ROWS = [
-    ['Augmentin 625 Duo', 'Amoxicillin 500mg + Clavulanic Acid 125mg', 'GSK', 'Antibiotics', 'Tablet', 'Allopathic', '10x6', '100', '250', 'DISCOUNT_ON_PTR', '10', '0', '0', '2027-12-31', '', 'false', 'India', '', 'Antibiotic tablets'],
-    ['Paracetamol 500mg', 'Paracetamol 500mg', 'Sun Pharma', 'Analgesics', 'Tablet', 'Allopathic', '10x10', '500', '100', 'NONE', '0', '0', '0', '2028-06-30', '', 'false', 'India', '', 'Paracetamol 500mg tablets'],
-    ['Pantoprazole 40mg', 'Pantoprazole 40mg', 'Abbott', 'Gastro', 'Tablet', 'Allopathic', '10x10', '350', '180', 'SAME_PRODUCT_BONUS_AND_DISCOUNT', '5', '10', '2', '2028-03-31', '', 'false', 'India', '', 'Buy 10 get 2 free'],
+    ['Paracetamol 500mg', 'Paracetamol 500mg', 'Sun Pharma', 'Analgesics', 'Tablet', 'Allopathic', '10x10', '500', '100', '10', 'NONE', '0', '0', '0', '', '2028-06-30', '', 'false', 'India', '', 'No offer'],
+    ['Augmentin 625 Duo', 'Amoxicillin 500mg + Clavulanic Acid 125mg', 'GSK', 'Antibiotics', 'Tablet', 'Allopathic', '10x6', '100', '250', '10', 'DISCOUNT_ON_PTR', '10', '0', '0', '', '2027-12-31', '', 'false', 'India', '', '10% discount on PTR'],
+    ['Pantoprazole 40mg', 'Pantoprazole 40mg', 'Abbott', 'Gastro', 'Tablet', 'Allopathic', '10x10', '350', '180', '10', 'SAME_PRODUCT_BONUS', '0', '10', '2', '', '2028-03-31', '', 'false', 'India', '', 'Buy 10 get 2 same product free'],
+    ['Azithromycin 500mg', 'Azithromycin 500mg', 'Cipla', 'Antibiotics', 'Tablet', 'Allopathic', '1 x 10', '200', '150', '5', 'DIFFERENT_PRODUCT_BONUS', '0', '10', '2', 'Paracetamol 500mg', '2028-09-30', '', 'false', 'India', '', 'Buy 10 get 2 of bonus product free'],
+    ['Cetirizine 10mg', 'Cetirizine 10mg', 'Cipla', 'Allergy', 'Tablet', 'Allopathic', '10 tablets', '250', '80', '10', 'SAME_PRODUCT_BONUS_AND_DISCOUNT', '5', '10', '2', '', '2028-10-31', '', 'false', 'India', '', '5% discount then buy 10 get 2 free'],
+    ['Amoxicillin 500mg', 'Amoxicillin 500mg', 'GSK', 'Antibiotics', 'Capsule', 'Allopathic', '10x10', '150', '220', '10', 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT', '5', '10', '2', 'Paracetamol 500mg', '', '', 'false', 'India', '', '5% discount then buy 10 get 2 bonus product free'],
   ];
 
   const ALLOWED_DISCOUNT_TYPES = [
@@ -117,7 +124,7 @@ export default function ImportTab() {
       const row = indexes.map(index => (sourceRow[index] ?? '').trim());
       const rowErrors: string[] = [];
 
-      const requiredIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 13];
+      const requiredIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
       requiredIndexes.forEach(index => {
         if (!row[index]) rowErrors.push(`${PREVIEW_HEADERS[index]} is required`);
       });
@@ -125,9 +132,10 @@ export default function ImportTab() {
       const numericFields = [
         { index: 7, label: 'Quantity', integer: true },
         { index: 8, label: 'MRP', integer: false },
-        { index: 10, label: 'Discount %', integer: false, optional: true },
-        { index: 11, label: 'Offer Buy Quantity', integer: true, optional: true },
-        { index: 12, label: 'Offer Free Quantity', integer: true, optional: true },
+        { index: 9, label: 'Min Order Quantity', integer: true },
+        { index: 11, label: 'Discount %', integer: false, optional: true },
+        { index: 12, label: 'Offer Buy Quantity', integer: true, optional: true },
+        { index: 13, label: 'Offer Free Quantity', integer: true, optional: true },
       ];
 
       numericFields.forEach(field => {
@@ -140,12 +148,12 @@ export default function ImportTab() {
         }
       });
 
-      const discount = row[10] ? Number(row[10]) : 0;
+      const discount = row[11] ? Number(row[11]) : 0;
       if (Number.isFinite(discount) && discount > 100) {
         rowErrors.push('Discount % cannot be greater than 100');
       }
 
-      const discountType = row[9] || 'NONE';
+      const discountType = row[10] || 'NONE';
       if (!ALLOWED_DISCOUNT_TYPES.includes(discountType)) {
         rowErrors.push(`Discount Type must be one of: ${ALLOWED_DISCOUNT_TYPES.join(', ')}`);
       }
@@ -153,21 +161,34 @@ export default function ImportTab() {
       const sameProductBonus =
         discountType === 'SAME_PRODUCT_BONUS' ||
         discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+      const differentProductBonus =
+        discountType === 'DIFFERENT_PRODUCT_BONUS' ||
+        discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
+      const requiresBonus = sameProductBonus || differentProductBonus;
 
-      const buy = row[11] ? Number(row[11]) : 0;
-      const free = row[12] ? Number(row[12]) : 0;
-      if (sameProductBonus && (buy <= 0 || free <= 0)) {
-        rowErrors.push('Offer Buy Quantity and Offer Free Quantity are required for a same-product offer');
+      const buy = row[12] ? Number(row[12]) : 0;
+      const free = row[13] ? Number(row[13]) : 0;
+      if (requiresBonus && (buy <= 0 || free <= 0)) {
+        rowErrors.push('Offer Buy Quantity and Offer Free Quantity are required for a bonus offer');
+      }
+      if (differentProductBonus && !row[14]) {
+        rowErrors.push('Bonus Product is required for a different-product offer');
+      }
+      if (!requiresBonus && (buy > 0 || free > 0 || row[14])) {
+        rowErrors.push('Offer Buy Quantity, Offer Free Quantity and Bonus Product must be blank/zero when the selected offer does not use a bonus');
       }
 
-      const prescription = row[15].toLowerCase();
+      const prescription = row[16].toLowerCase();
       if (prescription && !['true', 'false', 'yes', 'no', '1', '0'].includes(prescription)) {
         rowErrors.push('Prescription Required must be true/false, yes/no, or 1/0');
       }
 
-      const expiry = new Date(row[13]);
-      if (Number.isNaN(expiry.valueOf())) rowErrors.push('Expiry Date must be a valid date');
-      else if (expiry < new Date()) rowErrors.push('Expiry Date cannot be in the past');
+      const expiryRaw = row[15];
+      if (expiryRaw) {
+        const expiry = new Date(expiryRaw);
+        if (Number.isNaN(expiry.valueOf())) rowErrors.push('Expiry Date must be a valid date');
+        else if (expiry < new Date()) rowErrors.push('Expiry Date cannot be in the past');
+      }
 
       if (rowErrors.length) errors.push(`Row ${csvRowNumber}: ${rowErrors.join('; ')}`);
       else data.push(row);
@@ -280,15 +301,36 @@ export default function ImportTab() {
   const pricingPreview = (row: string[]) => {
     const mrp = Number(row[8]) || 0;
     const ptr = Number((mrp * 0.7619).toFixed(2));
-    const discount = Number(row[10]) || 0;
-    const type = row[9] || 'NONE';
-    const buy = Number(row[11]) || 0;
-    const free = Number(row[12]) || 0;
-    const sameBonus = type === 'SAME_PRODUCT_BONUS' || type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
-    const bonusPtr = sameBonus && buy > 0 && free > 0 ? Number((ptr * (buy / (buy + free))).toFixed(2)) : ptr;
-    const appliesDiscount = type === 'DISCOUNT_ON_PTR' || type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' || type === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
-    const discountAmount = appliesDiscount ? Number((bonusPtr * discount / 100).toFixed(2)) : 0;
-    return Math.max(0, Number((bonusPtr - discountAmount).toFixed(2)));
+    const discount = Number(row[11]) || 0;
+    const type = row[10] || 'NONE';
+    const buy = Number(row[12]) || 0;
+    const free = Number(row[13]) || 0;
+
+    const appliesDiscount =
+      type === 'DISCOUNT_ON_PTR' ||
+      type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' ||
+      type === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
+
+    // Discount is applied to PTR first.
+    // Same-product bonus: spread the paid price across paid + free units.
+    // Different-product bonus: the bonus product is free (₹0), so the
+    // source product keeps its discounted PTR as its effective price.
+    const discountedPtr = appliesDiscount
+      ? Number((ptr * (1 - discount / 100)).toFixed(2))
+      : ptr;
+
+    const sameProductBonus =
+      type === 'SAME_PRODUCT_BONUS' ||
+      type === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+
+    if (sameProductBonus && buy > 0 && free > 0) {
+      return Math.max(
+        0,
+        Number((discountedPtr * (buy / (buy + free))).toFixed(2))
+      );
+    }
+
+    return Math.max(0, discountedPtr);
   };
 
   return (
@@ -311,7 +353,7 @@ export default function ImportTab() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#4B725F]">
               <div><span className="font-bold text-[#17683E]">PTR:</span> automatically calculated at 76.19% of MRP</div>
               <div><span className="font-bold text-[#17683E]">GST:</span> automatically set to 5%</div>
-              <div><span className="font-bold text-[#17683E]">Offers:</span> discount and bonus fields drive Effective PTR</div>
+              <div><span className="font-bold text-[#17683E]">Offers:</span> discount is applied first; same-product bonus affects effective PTR, different-product bonus is free</div>
             </div>
           </div>
 
@@ -329,7 +371,7 @@ export default function ImportTab() {
             <p className="text-sm sm:text-base font-bold text-[#1C1C1E]">{phase === 'dragging' ? 'Drop to upload inventory' : 'Drag & drop your inventory CSV here'}</p>
             <p className="text-xs text-[#6B7280] mt-1">or choose a CSV file from your computer</p>
             <button type="button" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }} className="mt-5 px-5 py-2.5 rounded-xl bg-[#0D9A55] text-white text-xs font-bold hover:bg-[#0A7A43] transition-colors">Choose CSV File</button>
-            <p className="text-[10px] text-[#9CA3AF] mt-4">CSV files only · New format without SKU or Batch Number</p>
+            <p className="text-[10px] text-[#9CA3AF] mt-4">CSV files only · SKU, Batch Number, PTR and GST are handled automatically</p>
           </div>
         </div>
       ) : phase === 'parsing' ? (
@@ -401,8 +443,9 @@ export default function ImportTab() {
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-3">
                   {[
                     ['Composition', row[1]], ['Pack', row[6]], ['Quantity', row[7]], ['MRP', `₹${row[8]}`],
-                    ['PTR', `₹${(Number(row[8] || 0) * 0.7619).toFixed(2)}`], ['Discount', row[10] ? `${row[10]}%` : '0%'],
-                    ['Offer', row[9] || 'NONE'], ['Expiry', row[13]], ['Barcode', row[14] || 'Auto / optional'], ['GST', '5%']
+                    ['Min Order', row[9]], ['PTR', `₹${(Number(row[8] || 0) * 0.7619).toFixed(2)}`], ['Discount', row[11] ? `${row[11]}%` : '0%'],
+                    ['Offer', row[10] || 'NONE'], ['Offer Buy', row[12] || '0'], ['Offer Free', row[13] || '0'],
+                    ['Bonus Product', row[14] || '—'], ['Expiry', row[15] || '12/12/2030'], ['Barcode', row[16] || 'Auto / optional'], ['GST', '5%']
                   ].map(([label, value]) => <div key={label}><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">{label}</p><p className="text-xs font-semibold text-[#1C1C1E] mt-1 break-words">{value || '—'}</p></div>)}
                 </div>
               </div>

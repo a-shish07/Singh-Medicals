@@ -41,6 +41,7 @@ import type {
   Product,
   ToastMsg,
 } from "./types";
+import { calculateCart, calculateLine } from "./lib/pricing";
 
 interface CustomerProfile {
   id: string;
@@ -96,6 +97,7 @@ createProduct: (payload: {
   net?: number;
   expiry?: string;
   stock?: number;
+  bonusProductId?: string;
   isActive?: boolean;
 }) => Promise<Product>;
 updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
@@ -507,71 +509,12 @@ setOrders(bootstrap.orders || []);
     );
   }, []);
 
-   const getFreeQuantity = useCallback(
-    (product: Product, paidQuantity: number) => {
-      const type = String(
-        (product as Product & {
-          discountType?: string | null;
-        }).discountType || "NONE"
-      );
-
-      const buyQuantity = Number(
-        (product as Product & {
-          buyQuantity?: number | null;
-        }).buyQuantity || 0
-      );
-
-      const freeQuantity = Number(
-        (product as Product & {
-          freeQuantity?: number | null;
-        }).freeQuantity || 0
-      );
-
-      const isSameProductBonus =
-        type === "SAME_PRODUCT_BONUS" ||
-        type === "SAME_PRODUCT_BONUS_AND_DISCOUNT";
-
-      if (
-        !isSameProductBonus ||
-        buyQuantity <= 0 ||
-        freeQuantity <= 0 ||
-        paidQuantity <= 0
-      ) {
-        return 0;
-      }
-
-      return (
-        Math.floor(paidQuantity / buyQuantity) *
-        freeQuantity
-      );
-    },
-    []
-  );
-
   const getMaxPaidQuantity = useCallback(
     (product: Product) => {
-      const stock = Math.max(
-        0,
-        Math.floor(Number(product.stock || 0))
-      );
+      const stock = Math.max(0, Math.floor(Number(product.stockStrips ?? product.stock ?? 0)));
 
       if (stock <= 0) {
         return 0;
-      }
-
-      const discountType = String(
-        (product as Product & {
-          discountType?: string | null;
-        }).discountType || "NONE"
-      );
-
-      const hasSameProductBonus =
-        discountType === "SAME_PRODUCT_BONUS" ||
-        discountType ===
-          "SAME_PRODUCT_BONUS_AND_DISCOUNT";
-
-      if (!hasSameProductBonus) {
-        return stock;
       }
 
       let low = 0;
@@ -580,8 +523,7 @@ setOrders(bootstrap.orders || []);
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
 
-        const free = getFreeQuantity(product, mid);
-        const physicalQuantity = mid + free;
+        const physicalQuantity = calculateLine(product, mid).totalStrips;
 
         if (physicalQuantity <= stock) {
           low = mid;
@@ -592,7 +534,7 @@ setOrders(bootstrap.orders || []);
 
       return low;
     },
-    [getFreeQuantity]
+    []
   );
 
   const addToCart = useCallback(
@@ -617,10 +559,8 @@ setOrders(bootstrap.orders || []);
         return;
       }
 
-      const requestedQuantity = Math.max(
-        1,
-        Math.floor(Number(qty) || 1)
-      );
+      const minimum = Math.max(1, Math.floor(Number(product.minOrderQuantity || 1)));
+      const requestedQuantity = Math.max(minimum, Math.floor(Number(qty) || minimum));
 
       setCartItems((prev) => {
         const existing = prev.find(
@@ -700,10 +640,8 @@ setOrders(bootstrap.orders || []);
         Number(qty)
       );
 
-      if (
-        !Number.isFinite(requestedQuantity) ||
-        requestedQuantity <= 0
-      ) {
+      const minimum = Math.max(1, Math.floor(Number(product.minOrderQuantity || 1)));
+      if (!Number.isFinite(requestedQuantity) || requestedQuantity < minimum) {
         removeFromCart(productId);
         return;
       }
@@ -749,35 +687,7 @@ setOrders(bootstrap.orders || []);
     0
   );
 
-  // Customer-facing wholesale price.
-  // Prefer the automatic Effective PTR and fall back to legacy net
-  // for older products/API records that do not have effectivePtr yet.
-  const getEffectivePrice = useCallback((product: Product) => {
-    const value = (
-      product as Product & {
-        effectivePtr?: number | null;
-      }
-    ).effectivePtr;
-
-    return Number.isFinite(Number(value))
-      ? Number(value)
-      : Number(product.net || 0);
-  }, []);
-
-  const cartTotal = cartItems.reduce((sum, item) => {
-    const product = products.find(
-      (entry) => entry.id === item.productId
-    );
-
-    if (!product) {
-      return sum;
-    }
-
-    return (
-      sum +
-      getEffectivePrice(product) * item.quantity
-    );
-  }, 0);
+  const cartTotal = calculateCart(products, cartItems).subtotal;
 
   const setIsLoggedIn = useCallback(
   (value: boolean) => {
@@ -1022,6 +932,8 @@ const saveCustomerProfile = useCallback(
     net?: number;
     expiry?: string;
     stock?: number;
+    minOrderQuantity?: number;
+    bonusProductId?: string;
     isActive?: boolean;
   }) => {
     if (!adminToken) {

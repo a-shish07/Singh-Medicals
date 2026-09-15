@@ -79,7 +79,12 @@ function ProductCard({ product }: { product: Product }) {
     (i) => i.productId === product.id
   );
 
-const [localQty, setLocalQty] = useState<number | "">(1);
+  const minQty = Math.max(
+  1,
+  Number(product.minOrderQuantity) || 1
+);
+
+const [localQty, setLocalQty] = useState<number | "">(() => Math.max(1, product.minOrderQuantity || 1));
 const [cartQtyDraft, setCartQtyDraft] =
   useState<string | null>(null);
 
@@ -108,16 +113,18 @@ const [cartQtyDraft, setCartQtyDraft] =
 };
 
 const handleLocalQtyBlur = () => {
-  if (localQty === "" || localQty < 1) {
-    setLocalQty(1);
+  if (localQty === "" || localQty < (product.minOrderQuantity || 1)) {
+    setLocalQty(Math.max(1, product.minOrderQuantity || 1));
   }
 };
+
+
 
   const handleAdd = () => {
     const quantity =
   localQty === ""
-    ? 1
-    : Math.max(1, localQty);
+    ? Math.max(1, product.minOrderQuantity || 1)
+    : Math.max(product.minOrderQuantity || 1, localQty);
 
     addToCart(product.id, quantity);
 
@@ -125,7 +132,7 @@ const handleLocalQtyBlur = () => {
       `${product.name} × ${quantity} added to cart`
     );
 
-    setLocalQty(1);
+  setLocalQty(Math.max(1, product.minOrderQuantity || 1));
   };
 
  const handleCartQtyChange = (
@@ -278,7 +285,7 @@ const commitCartQty = () => {
                   onClick={() =>
                     updateQty(
                       product.id,
-                      cartItem.quantity - 1
+                      cartItem.quantity - minQty
                     )
                   }
                   className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"
@@ -305,7 +312,7 @@ const commitCartQty = () => {
                   onClick={() =>
                     updateQty(
                       product.id,
-                      cartItem.quantity + 1
+                      cartItem.quantity + minQty
                     )
                   }
                   className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"

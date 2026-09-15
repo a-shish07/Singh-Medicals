@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "../context";
 import type { Product } from "../types";
@@ -100,6 +100,10 @@ export default function ProductDetail() {
   const [localQty, setLocalQty] = useState(1);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
+  useEffect(() => {
+    if (product) setLocalQty(Math.max(1, product.minOrderQuantity || 1));
+  }, [product?.id, product?.minOrderQuantity]);
+
   /* =======================================================
      PRODUCT NOT FOUND
   ====================================================== */
@@ -140,6 +144,7 @@ export default function ProductDetail() {
     );
   }
 
+
   /* =======================================================
      DATA
   ====================================================== */
@@ -166,11 +171,17 @@ export default function ProductDetail() {
   const handleAdd = () => {
     addToCart(product.id, localQty);
     addToast(`${product.name} added to cart`);
-    setLocalQty(1);
+    setLocalQty(Math.max(1, product.minOrderQuantity || 1));
   };
+const minQty = Math.max(1, Number(product.minOrderQuantity) || 1);
 
-  const decreaseLocalQty = () => setLocalQty((q) => Math.max(1, q - 1));
-  const increaseLocalQty = () => setLocalQty((q) => q + 1);
+const decreaseLocalQty = () => {
+  setLocalQty((q) => Math.max(minQty, q - minQty));
+};
+
+const increaseLocalQty = () => {
+  setLocalQty((q) => q + minQty);
+};
 
   /* =======================================================
      RENDER
@@ -370,15 +381,19 @@ export default function ProductDetail() {
                     <div className="flex items-center gap-1 rounded-2xl bg-white p-1 shadow-sm">
                       <motion.button
                         whileTap={{ scale: 0.85 }}
-                        onClick={() => updateQty(product.id, cartItem.quantity - 1)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
+onClick={() =>
+  updateQty(
+    product.id,
+    cartItem.quantity - minQty
+  )
+}                        className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                       >
                         −
                       </motion.button>
                       <span className="w-8 text-center text-sm font-extrabold text-[#1C1C1E]">{cartItem.quantity}</span>
                       <motion.button
                         whileTap={{ scale: 0.85 }}
-                        onClick={() => updateQty(product.id, cartItem.quantity + 1)}
+                        onClick={() => updateQty(product.id, cartItem.quantity + minQty)}
                         className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                       >
                         +
@@ -541,7 +556,12 @@ export default function ProductDetail() {
                   −
                 </button>
                 <span className="w-7 text-center text-xs font-extrabold text-[#0D9A55]">{cartItem.quantity}</span>
-                <button onClick={() => updateQty(product.id, cartItem.quantity + 1)} className="flex h-7 w-7 items-center justify-center rounded-lg text-lg font-bold text-[#0D9A55]">
+                <button onClick={() =>
+  updateQty(
+    product.id,
+    cartItem.quantity + minQty
+  )
+} className="flex h-7 w-7 items-center justify-center rounded-lg text-lg font-bold text-[#0D9A55]">
                   +
                 </button>
               </div>

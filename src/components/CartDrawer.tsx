@@ -113,7 +113,10 @@ export default function CartDrawer() {
                 const product = products.find((p) => p.id === item.productId);
 
                 if (!product) return null;
-
+const minQty = Math.max(
+  1,
+  Number(product.minOrderQuantity) || 1
+);
                 const lineTotal = (product.net ?? 0) * item.quantity;
 
                 return (
@@ -203,9 +206,12 @@ export default function CartDrawer() {
                             <div className="flex items-center overflow-hidden rounded-xl border border-black/[0.08] bg-white">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  updateQty(item.productId, item.quantity - 1)
-                                }
+                               onClick={() =>
+  updateQty(
+    item.productId,
+    Math.max(minQty, item.quantity - minQty)
+  )
+}
                                 className="flex h-8 w-8 items-center justify-center text-base font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                                 aria-label="Decrease quantity"
                               >
@@ -219,8 +225,11 @@ export default function CartDrawer() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  updateQty(item.productId, item.quantity + 1)
-                                }
+  updateQty(
+    item.productId,
+    item.quantity + minQty
+  )
+}
                                 className="flex h-8 w-8 items-center justify-center text-base font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                                 aria-label="Increase quantity"
                               >

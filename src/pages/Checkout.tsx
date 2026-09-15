@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useApp } from "../context";
 import type { Product } from "../types";
+import { calculateCart, calculateLine } from "../lib/pricing";
 
 function effectivePrice(product: Product) {
   const value = (product as Product & { effectivePtr?: number | null }).effectivePtr;
@@ -35,15 +36,8 @@ export default function Checkout() {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
 
-  const checkoutTotal = useMemo(
-    () =>
-      cartItems.reduce((sum, item) => {
-        const product = products.find((entry) => entry.id === item.productId);
-        if (!product) return sum;
-        return sum + effectivePrice(product) * item.quantity;
-      }, 0),
-    [cartItems, products]
-  );
+  const checkout = useMemo(() => calculateCart(products, cartItems), [cartItems, products]);
+  const checkoutTotal = checkout.grandTotal;
 
   // Load the customer's latest profile
   useEffect(() => {
@@ -436,9 +430,8 @@ export default function Checkout() {
               </p>
 
               <p className="text-xs text-[#7A6A32] mt-0.5">
-                GST and freight charges will be calculated and
-                communicated at order confirmation. Final invoice
-                will be shared before dispatch.
+                Prices exclude GST. GST is 5%; freight is ₹45 for a subtotal
+                of ₹4,000 or less and free above ₹4,000.
               </p>
             </div>
           </div>
@@ -466,8 +459,8 @@ export default function Checkout() {
 
                 if (!product) return null;
 
-                const lineTotal =
-                  effectivePrice(product) * item.quantity;
+                const line = calculateLine(product, item.quantity);
+                const lineTotal = line.taxableAmount;
 
                 return (
                   <div
@@ -507,11 +500,11 @@ export default function Checkout() {
 
             <div className="flex justify-between text-sm mb-2">
               <span className="text-[#6B7280]">
-                GST
+                GST (5%)
               </span>
 
               <span className="text-[#6B7280] text-xs">
-                TBD
+                ₹{checkout.gst.toFixed(2)}
               </span>
             </div>
 
@@ -521,7 +514,7 @@ export default function Checkout() {
               </span>
 
               <span className="text-[#6B7280] text-xs">
-                TBD
+                {checkout.shipping === 0 ? "FREE" : `₹${checkout.shipping.toFixed(2)}`}
               </span>
             </div>
 

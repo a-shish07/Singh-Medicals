@@ -57,8 +57,10 @@ export default function ProductsTab() {
     discountValue: string;
     buyQuantity: string;
     freeQuantity: string;
+    bonusProductId: string;
     expiry: string;
     stock: string;
+    minOrderQuantity: string;
     isActive: boolean;
   };
 
@@ -80,8 +82,10 @@ export default function ProductsTab() {
     discountValue: '',
     buyQuantity: '',
     freeQuantity: '',
+    bonusProductId: '',
     expiry: '',
     stock: '',
+    minOrderQuantity: '1',
     isActive: true,
   };
 
@@ -106,24 +110,22 @@ export default function ProductsTab() {
     const free = Math.max(0, Math.floor(Number(source.freeQuantity) || 0));
     const ptr = Number((mrp * 0.7619).toFixed(2));
 
-    const sameBonus =
-      source.discountType === 'SAME_PRODUCT_BONUS' ||
-      source.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
-
     const hasDiscount =
       source.discountType === 'DISCOUNT_ON_PTR' ||
       source.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' ||
       source.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT';
-
-    const bonusAdjustedPtr = sameBonus && buy > 0 && free > 0
-      ? Number((ptr * (buy / (buy + free))).toFixed(2))
-      : ptr;
+    const hasSameBonus = source.discountType === 'SAME_PRODUCT_BONUS' || source.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
 
     const discountAmount = hasDiscount
-      ? Number((bonusAdjustedPtr * (discount / 100)).toFixed(2))
+      ? Number((ptr * (discount / 100)).toFixed(2))
       : 0;
 
-    const effectivePtr = Math.max(0, Number((bonusAdjustedPtr - discountAmount).toFixed(2)));
+    const discountedPtr = Math.max(0, Number((ptr - discountAmount).toFixed(2)));
+    // Display the effective per-strip cost for one complete same-product
+    // scheme group; billing still uses discounted PTR × paid strips.
+    const effectivePtr = hasSameBonus && buy > 0 && free > 0
+      ? Number((discountedPtr * buy / (buy + free)).toFixed(2))
+      : discountedPtr;
 
     return {
       ptr,
@@ -131,8 +133,8 @@ export default function ProductsTab() {
       discount,
       discountAmount,
       effectivePtr,
-      buy: sameBonus ? buy : 0,
-      free: sameBonus ? free : 0,
+      buy,
+      free,
     };
   };
 
@@ -146,6 +148,7 @@ export default function ProductsTab() {
       discountValue: product.discountValue == null ? '' : String(product.discountValue),
       buyQuantity: product.buyQuantity == null ? '' : String(product.buyQuantity),
       freeQuantity: product.freeQuantity == null ? '' : String(product.freeQuantity),
+      bonusProductId: product.bonusProductId || '',
     }).effectivePtr;
 
   const openAdd = () => {
@@ -172,8 +175,10 @@ export default function ProductsTab() {
       discountValue: product.discountValue == null ? '' : String(product.discountValue),
       buyQuantity: product.buyQuantity == null ? '' : String(product.buyQuantity),
       freeQuantity: product.freeQuantity == null ? '' : String(product.freeQuantity),
+      bonusProductId: product.bonusProductId || '',
       expiry: product.expiry ? String(product.expiry).slice(0, 10) : '',
       stock: product.stock == null ? '0' : String(product.stock),
+      minOrderQuantity: String(product.minOrderQuantity || 1),
       isActive: product.isActive !== false,
     });
     setEditing(product);
@@ -237,12 +242,15 @@ export default function ProductsTab() {
       return;
     }
 
-    const needsSameBonus =
-      form.discountType === 'SAME_PRODUCT_BONUS' ||
-      form.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT';
+    if (!Number.isInteger(Number(form.minOrderQuantity)) || Number(form.minOrderQuantity) < 1) {
+      addToast('Minimum order quantity must be a positive whole number.', 'error');
+      return;
+    }
+
+    const needsSameBonus = form.discountType.includes('BONUS');
 
     if (needsSameBonus && (!(Number(form.buyQuantity) > 0) || !(Number(form.freeQuantity) > 0))) {
-      addToast('Buy Quantity and Free Quantity are required for a same-product offer.', 'error');
+      addToast('Buy and free quantities are required for every bonus offer.', 'error');
       return;
     }
 
@@ -267,8 +275,10 @@ export default function ProductsTab() {
         discountValue: Number(form.discountValue) || 0,
         buyQuantity: Number(form.buyQuantity) || 0,
         freeQuantity: Number(form.freeQuantity) || 0,
+        bonusProductId: form.bonusProductId || undefined,
         expiry: form.expiry,
         stock: Number(form.stock) || 0,
+        minOrderQuantity: Number(form.minOrderQuantity) || 1,
         isActive: form.isActive,
       };
 
@@ -367,7 +377,7 @@ const productFormModal = (adding || editing) ? (
                     ['category', 'Category', 'e.g. Tablets', true],
                     ['medicineType', 'Medicine Type', 'e.g. Allopathic', false],
                     ['productType', 'Product Type', 'e.g. Tablet', false],
-                    ['pack', 'Pack Size', 'e.g. 10 Tablets', true],
+                    ['pack', 'Pack Size', 'e.g. 10 Tablets or 100 ml bottle', true],
                     ['countryOfOrigin', 'Country of Origin', 'India', false],
                   ].map(([key, label, placeholder, required]) => (
                     <label key={key as string} className={key === 'composition' ? 'sm:col-span-2' : ''}>
@@ -386,7 +396,7 @@ const productFormModal = (adding || editing) ? (
               <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5">
                 <div className="mb-4">
                   <h3 className="text-sm font-extrabold text-slate-900">Selling & Stock</h3>
-                  <p className="text-xs text-slate-500 mt-1">Only enter MRP and stock. PTR and effective price are calculated automatically.</p>
+                  <p className="text-xs text-slate-500 mt-1">MRP, stock and minimum order quantity are entered in sellable units. PTR and effective price are calculated automatically.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   <label>
@@ -399,6 +409,10 @@ const productFormModal = (adding || editing) ? (
                   <label>
                     <span className="text-xs font-bold text-slate-700">Opening Stock</span>
                     <input type="number" min="0" step="1" value={form.stock} onChange={e => setField('stock', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="0" />
+                  </label>
+                  <label>
+                    <span className="text-xs font-bold text-slate-700">Minimum Order Quantity</span>
+                    <input type="number" min="1" step="1" value={form.minOrderQuantity} onChange={e => setField('minOrderQuantity', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="1" />
                   </label>
                   <label>
                     <span className="text-xs font-bold text-slate-700">Expiry Date *</span>
@@ -492,6 +506,7 @@ const productFormModal = (adding || editing) ? (
                     )}
 
                     {(form.discountType === 'SAME_PRODUCT_BONUS' || form.discountType === 'DIFFERENT_PRODUCT_BONUS' || form.discountType === 'SAME_PRODUCT_BONUS_AND_DISCOUNT' || form.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT') && (
+                      <>
                       <div className="grid grid-cols-2 gap-3">
                         <label>
                           <span className="text-xs font-bold text-slate-700">Buy Quantity</span>
@@ -502,6 +517,16 @@ const productFormModal = (adding || editing) ? (
                           <input type="number" min="1" step="1" value={form.freeQuantity} onChange={e => setField('freeQuantity', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.75 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="2" />
                         </label>
                       </div>
+                      {(form.discountType === 'DIFFERENT_PRODUCT_BONUS' || form.discountType === 'DIFFERENT_PRODUCT_BONUS_AND_DISCOUNT') && (
+                        <label className="block">
+                          <span className="text-xs font-bold text-slate-700">Free bonus product</span>
+                          <select value={form.bonusProductId} onChange={e => setField('bonusProductId', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none focus:border-blue-500">
+                            <option value="">Select the product given free</option>
+                            {adminProducts.filter(product => product.id !== editing?.id).map(product => <option key={product.id} value={product.id}>{product.name} — {product.pack}</option>)}
+                          </select>
+                        </label>
+                      )}
+                      </>
                     )}
                   </div>
                 </div>

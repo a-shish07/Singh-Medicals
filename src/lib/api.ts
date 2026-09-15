@@ -50,6 +50,9 @@ function productFromApi(product: any): Product {
     mrp: Number(product.mrp || 0),
     net: Number(product.net || 0),
     stock: Number(product.stock || 0),
+    minOrderQuantity: Number(product.minOrderQuantity || 1),
+    stockStrips: product.stockStrips == null ? undefined : Number(product.stockStrips),
+    stripsPerBox: product.stripsPerBox == null ? null : Number(product.stripsPerBox),
 
     ptr:
   product.ptr == null
@@ -88,6 +91,7 @@ freeQuantity:
   product.freeQuantity == null
     ? null
     : Number(product.freeQuantity),
+bonusProductId: product.bonusProductId || null,
 
     expiry:
       typeof product.expiry === "string"
@@ -155,7 +159,7 @@ function orderFromApi(order: any): Order {
       rate: Number(item.unitPrice ?? item.rate ?? 0),
     })),
 
-    total: Number(order.subtotal ?? order.total ?? 0),
+    total: Number(order.grandTotal ?? order.subtotal ?? order.total ?? 0),
 
     status:
       STATUS_LABELS[order.status] || order.status,
@@ -666,6 +670,8 @@ export async function createAdminProduct(
     net?: number;
     expiry?: string;
     stock?: number;
+    minOrderQuantity?: number;
+    bonusProductId?: string;
 
     isActive?: boolean;
   }
@@ -726,6 +732,8 @@ export async function updateProduct(
     effectivePtr?: number | null;
     buyQuantity?: number | null;
     freeQuantity?: number | null;
+    bonusProductId?: string | null;
+    minOrderQuantity?: number;
   }
 ) {
   const response = await request<any>(
@@ -780,12 +788,14 @@ export async function updateProduct(
 
         freeQuantity:
           Number(product.freeQuantity) || 0,
+        bonusProductId: product.bonusProductId || undefined,
 
         // ================================
         // PRODUCT LIFECYCLE
         // ================================
         expiry: product.expiry,
         stock: product.stock,
+        minOrderQuantity: product.minOrderQuantity,
         isActive: product.isActive,
       }),
     }

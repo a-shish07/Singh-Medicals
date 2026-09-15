@@ -73,30 +73,44 @@ function ProductCard({ product }: { product: ProductPricing }) {
     (i) => i.productId === product.id
   );
 
-  const [localQty, setLocalQty] = useState(1);
+  const [localQty, setLocalQty] = useState(() => Math.max(1, product.minOrderQuantity || 1));
+  const minQty = Math.max(1, Number(product.minOrderQuantity) || 1);
 
   const price = effectivePrice(product);
   const offer = offerLabel(product);
 
-  const handleLocalQtyChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
+ const handleLocalQtyChange = (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  const value = e.target.value;
 
-    if (value === "") {
-      setLocalQty(1);
-      return;
-    }
+  if (value === "") {
+    setLocalQty("");
+    return;
+  }
 
-    const numericValue = Number(value);
+  const numericValue = Number(value);
 
-    if (Number.isFinite(numericValue)) {
-      setLocalQty(Math.max(1, Math.floor(numericValue)));
-    }
-  };
+  if (Number.isFinite(numericValue) && numericValue >= 0) {
+    setLocalQty(Math.floor(numericValue));
+  }
+};
+
+const handleLocalQtyBlur = () => {
+  const value = Number(localQty);
+
+  if (!Number.isFinite(value) || value < minQty) {
+    setLocalQty(minQty);
+    return;
+  }
+
+  const normalized = Math.floor(value / minQty) * minQty;
+
+  setLocalQty(Math.max(minQty, normalized));
+};
 
   const handleAdd = () => {
-    const quantity = Math.max(1, localQty);
+    const quantity = Math.max(product.minOrderQuantity || 1, localQty);
 
     addToCart(product.id, quantity);
 
@@ -104,7 +118,7 @@ function ProductCard({ product }: { product: ProductPricing }) {
       `${product.name} × ${quantity} added to cart`
     );
 
-    setLocalQty(1);
+    setLocalQty(Math.max(1, product.minOrderQuantity || 1));
   };
 
   const handleCartQtyChange = (
@@ -126,6 +140,8 @@ function ProductCard({ product }: { product: ProductPricing }) {
       );
     }
   };
+
+  
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden group">
@@ -241,7 +257,7 @@ function ProductCard({ product }: { product: ProductPricing }) {
                   onClick={() =>
                     updateQty(
                       product.id,
-                      cartItem.quantity - 1
+                      cartItem.quantity - minQty
                     )
                   }
                   className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"
@@ -261,7 +277,7 @@ function ProductCard({ product }: { product: ProductPricing }) {
                   onClick={() =>
                     updateQty(
                       product.id,
-                      cartItem.quantity + 1
+                      cartItem.quantity + minQty
                     )
                   }
                   className="w-8 h-8 shrink-0 flex items-center justify-center bg-white text-[#0D9A55] hover:bg-[#0D9A55] hover:text-white rounded-lg transition-colors font-bold text-lg shadow-sm"
@@ -294,31 +310,35 @@ function ProductCard({ product }: { product: ProductPricing }) {
 
                 {/* Minus */}
                 <button
-                  onClick={() =>
-                    setLocalQty((q) =>
-                      Math.max(1, q - 1)
-                    )
-                  }
+                 onClick={() =>
+  setLocalQty((q) =>
+    q === "" ? minQty : Math.max(minQty, q - minQty)
+  )
+}
                   className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
                 >
                   −
                 </button>
 
                 {/* Editable quantity */}
-                <input
-                  type="number"
-                  min={1}
-                  value={localQty}
-                  onChange={handleLocalQtyChange}
-                  aria-label={`Quantity for ${product.name}`}
+             <input
+  type="number"
+  min={minQty}
+  step={minQty}
+  value={localQty}
+  onChange={handleLocalQtyChange}
+  onBlur={handleLocalQtyBlur}
+  aria-label={`Quantity for ${product.name}`}
                   className="w-16 h-9 text-center bg-[#F5F7F5] border border-black/[0.08] rounded-xl text-sm font-bold text-[#1C1C1E] focus:outline-none focus:ring-2 focus:ring-[#0D9A55]/30 focus:border-[#0D9A55]"
                 />
 
                 {/* Plus */}
                 <button
                   onClick={() =>
-                    setLocalQty((q) => q + 1)
-                  }
+  setLocalQty((q) =>
+    q === "" ? minQty : q + minQty
+  )
+}
                   className="w-9 h-9 shrink-0 flex items-center justify-center bg-[#F5F7F5] border border-black/[0.06] text-[#6B7280] hover:text-[#0D9A55] hover:bg-[#E8F5EE] rounded-xl transition-colors font-bold text-lg"
                 >
                   +

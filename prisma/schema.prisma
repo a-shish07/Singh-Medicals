@@ -87,6 +87,7 @@ model Product {
   net            Decimal  @db.Decimal(10, 2)
   expiry         DateTime
   stock          Int      @default(0)
+  minOrderQuantity Int    @default(1)
   isActive       Boolean  @default(true)
 
   inventoryBatches InventoryBatch[]
@@ -131,6 +132,9 @@ model Order {
   deliveryPhone   String
   deliveryAddress String
   subtotal        Decimal            @db.Decimal(12, 2)
+  gstTotal        Decimal            @default(0) @db.Decimal(12, 2)
+  shippingTotal   Decimal            @default(0) @db.Decimal(12, 2)
+  grandTotal      Decimal            @default(0) @db.Decimal(12, 2)
   status          OrderStatus        @default(SUBMITTED)
   items           OrderItem[]
   statusHistory   OrderStatusEvent[]
@@ -153,6 +157,11 @@ model OrderItem {
   productName String
   unitPrice   Decimal @db.Decimal(10, 2)
   quantity    Int
+  paidQuantity Int @default(0)
+  freeQuantity Int @default(0)
+  totalQuantity Int @default(0)
+  stripsPerBox Int @default(1)
+  isFree      Boolean @default(false)
   order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product     Product @relation(fields: [productId], references: [id])
 }
