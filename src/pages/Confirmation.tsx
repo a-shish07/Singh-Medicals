@@ -22,7 +22,7 @@ export default function Confirmation() {
                 </svg>
               </div>
               <h1 className="text-2xl font-extrabold text-white mb-1" style={{ fontFamily: "'DM Sans', sans-serif" }}>Order Placed!</h1>
-              <p className="text-white/80 text-sm">Your wholesale order has been received</p>
+              <p className="text-white/80 text-sm">Your order has been received</p>
             </div>
           </div>
 

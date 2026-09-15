@@ -395,13 +395,13 @@ export default function Catalogue() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#E8F5EE] rounded-full mb-4">
               <span className="w-2 h-2 rounded-full bg-[#0D9A55] animate-pulse" />
-              <span className="text-xs font-semibold text-[#0D9A55]">Live Wholesale Rates · Updated Today</span>
+              <span className="text-xs font-semibold text-[#0D9A55]">Live Best Rates · Updated Today</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1C1C1E] mb-3 leading-tight" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              Wholesale Pharma Catalogue
+               Pharma Catalogue
             </h1>
             <p className="text-[#6B7280] text-lg mb-6">
-              Trusted wholesale rates for retail pharmacies — direct from distributor, no middlemen.
+              Trusted best rates for retail pharmacies — direct from distributor, no middlemen.
             </p>
 
             {/* Search Bar */}

@@ -22,6 +22,7 @@ import {
   lookupOrder,
   requestOtp as apiRequestOtp,
   updateOrderStatus as apiUpdateOrderStatus,
+  sendTrackingEmail as apiSendTrackingEmail,
   updateProduct as apiUpdateProduct,
   verifyOtp as apiVerifyOtp,
   loadCustomerProfile,
@@ -52,8 +53,8 @@ interface CustomerProfile {
 
   shopName: string;
   gstNumber: string;
-  drugLicence: string;
-  profileImage: string;
+drugLicence20B: string;
+drugLicence21B: string;  profileImage: string;
 
   address: string;
   city: string;
@@ -128,7 +129,8 @@ saveCustomerProfile: (profile: {
   phone?: string;
   shopName?: string;
   gstNumber?: string;
-  drugLicence?: string;
+  drugLicence20B?: string;
+  drugLicence21B?: string;
   profileImage?: string;
   address?: string;
   city?: string;
@@ -168,6 +170,11 @@ adminLogin: (
   confirmedOrderId: string;
   placeOrder: (details: CheckoutDetails) => Promise<void>;
   updateOrderStatus: (orderId: string, status: OrderStatus, trackingId?: string, deliveryPartner?: string) => Promise<void>;
+  sendTrackingEmail: (
+  orderId: string,
+  trackingId: string,
+  deliveryPartner: string
+) => Promise<void>;
   importProductRows: (
     rows: string[][]
   ) => Promise<{ inserted: number; updated: number }>;
@@ -787,6 +794,29 @@ setOrders(bootstrap.orders || []);
   []
 );
 
+const sendTrackingEmail = async (
+  orderId: string,
+  trackingId: string,
+  deliveryPartner: string
+) => {
+  if (!adminToken) {
+    throw new Error("Admin authentication required.");
+  }
+
+  const { order } = await apiSendTrackingEmail(
+    adminToken,
+    orderId,
+    trackingId,
+    deliveryPartner
+  );
+
+  setOrders((prev) =>
+    prev.map((existing) =>
+      existing.id === order.id ? order : existing
+    )
+  );
+};
+
   const logoutCustomer = useCallback(() => {
     setIsLoggedIn(false);
     addToast("Logged out successfully", "info");
@@ -869,7 +899,8 @@ const saveCustomerProfile = useCallback(
     phone?: string;
     shopName?: string;
     gstNumber?: string;
-    drugLicence?: string;
+    drugLicence20B?: string;
+    drugLicence21B?: string;
     profileImage?: string;
     address?: string;
     city?: string;
@@ -1143,6 +1174,7 @@ verifyOtp,
         confirmedOrderId,
         placeOrder,
         updateOrderStatus,
+        sendTrackingEmail,
         importProductRows,
         lookupTrackedOrder,
       }}

@@ -6,7 +6,7 @@ import { fadeUp, staggerContainer as stagger } from "../lib/motionVariants";
 const TERMS_SECTIONS = [
   {
     title: "Eligibility & Registration",
-    body: "Access to wholesale pricing and the ability to place orders on Singh Medical Stores is restricted to registered retail pharmacy licence holders in India. By registering, you confirm that you hold a valid retail drug licence (Form 20B/21B) and are legally authorised to purchase and dispense pharmaceutical products.",
+    body: "Access to best pricing and the ability to place orders on Singh Medical Stores is restricted to registered retail pharmacy licence holders in India. By registering, you confirm that you hold a valid retail drug licence (Form 20B/21B) and are legally authorised to purchase and dispense pharmaceutical products.",
   },
   {
     title: "Ordering & Pricing",

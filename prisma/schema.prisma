@@ -41,8 +41,9 @@ model User {
   passwordHash String
   phone        String?
   shopName     String?
-  gstNumber    String?
-  drugLicence  String?
+ gstNumber    String?
+drugLicence20B String
+drugLicence21B String
   profileImage String?
   address      String?
   city         String?

@@ -13,7 +13,8 @@ type ProfileForm = {
   phone: string;
   shopName: string;
   gstNumber: string;
-  drugLicence: string;
+  drugLicence20B: string;
+  drugLicence21B: string;
   profileImage: string;
   address: string;
   city: string;
@@ -27,7 +28,8 @@ const emptyForm: ProfileForm = {
   phone: "",
   shopName: "",
   gstNumber: "",
-  drugLicence: "",
+  drugLicence20B: "",
+  drugLicence21B: "",
   profileImage: "",
   address: "",
   city: "",
@@ -385,7 +387,8 @@ export default function Profile() {
           phone: profile.phone || "",
           shopName: profile.shopName || "",
           gstNumber: profile.gstNumber || "",
-          drugLicence: profile.drugLicence || "",
+          drugLicence20B: profile.drugLicence20B || "",
+          drugLicence21B: profile.drugLicence21B || "",
           profileImage: profile.profileImage || "",
           address: profile.address || "",
           city: profile.city || "",
@@ -409,7 +412,8 @@ export default function Profile() {
       phone: customerProfile.phone || "",
       shopName: customerProfile.shopName || "",
       gstNumber: customerProfile.gstNumber || "",
-      drugLicence: customerProfile.drugLicence || "",
+      drugLicence20B: customerProfile.drugLicence20B || "",
+      drugLicence21B: customerProfile.drugLicence21B || "",
       profileImage: customerProfile.profileImage || "",
       address: customerProfile.address || "",
       city: customerProfile.city || "",
@@ -437,7 +441,8 @@ export default function Profile() {
       phone: customerProfile.phone || "",
       shopName: customerProfile.shopName || "",
       gstNumber: customerProfile.gstNumber || "",
-      drugLicence: customerProfile.drugLicence || "",
+      drugLicence20B: customerProfile.drugLicence20B || "",
+      drugLicence21B: customerProfile.drugLicence21B || "",
       profileImage: customerProfile.profileImage || "",
       address: customerProfile.address || "",
       city: customerProfile.city || "",
@@ -456,7 +461,8 @@ export default function Profile() {
         phone: customerProfile.phone || "",
         shopName: customerProfile.shopName || "",
         gstNumber: customerProfile.gstNumber || "",
-        drugLicence: customerProfile.drugLicence || "",
+        drugLicence20B: customerProfile.drugLicence20B || "",
+        drugLicence21B: customerProfile.drugLicence21B || "",
         profileImage: customerProfile.profileImage || "",
         address: customerProfile.address || "",
         city: customerProfile.city || "",
@@ -742,7 +748,8 @@ export default function Profile() {
         phone: form.phone,
         shopName: form.shopName,
         gstNumber: form.gstNumber,
-        drugLicence: form.drugLicence,
+        drugLicence20B: form.drugLicence20B,
+        drugLicence21B: form.drugLicence21B,
         profileImage: form.profileImage,
         address: form.address,
         city: form.city,
@@ -1217,15 +1224,27 @@ export default function Profile() {
               />
 
               <Field
-                label="Drug Licence Number"
-                value={form.drugLicence}
+                label="Drug Licence 20B"
+                value={form.drugLicence20B}
                 onChange={(value) =>
                   updateField(
-                    "drugLicence",
+                    "drugLicence20B",
                     value
                   )
                 }
-                placeholder="Enter drug licence number"
+                placeholder="Enter Drug Licence 20B"
+              />
+
+              <Field
+                label="Drug Licence 21B"
+                value={form.drugLicence21B}
+                onChange={(value) =>
+                  updateField(
+                    "drugLicence21B",
+                    value
+                  )
+                }
+                placeholder="Enter Drug Licence 21B"
               />
             </div>
           ) : (
@@ -1240,8 +1259,12 @@ export default function Profile() {
                   customerProfile.gstNumber,
                 ],
                 [
-                  "Drug Licence",
-                  customerProfile.drugLicence,
+                  "Drug Licence 20B",
+                  customerProfile.drugLicence20B,
+                ],
+                [
+                  "Drug Licence 21B",
+                  customerProfile.drugLicence21B,
                 ],
               ].map(([label, value]) => (
                 <div

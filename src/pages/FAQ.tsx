@@ -22,7 +22,7 @@ const FAQ_DATA: FAQGroup[] = [
       },
       {
         q: "What is the minimum order value or quantity?",
-        a: "There is no minimum order value for registered retailers. You can order any quantity at the listed wholesale net rate.",
+        a: "There is no minimum order value for registered retailers. You can order any quantity at the listed  net rate.",
       },
       {
         q: "Can I modify or cancel my order after placing it?",
@@ -64,11 +64,11 @@ const FAQ_DATA: FAQGroup[] = [
       },
       {
         q: "Which areas do you deliver to?",
-        a: "We currently serve pharmacies in Kushinagar, Gorakhpur, Deoria, Basti, Mau, Azamgarh, and surrounding districts of Eastern Uttar Pradesh. Contact us for delivery to other areas.",
+        a: "We currently serve pharmacies across all over India. Contact us for delivery to any areas.",
       },
       {
         q: "What are the delivery charges?",
-        a: "Delivery is free for orders above ₹2,000. A nominal ₹50 freight charge applies on orders below ₹2,000 for local delivery. Outstation charges vary by distance.",
+        a: "Delivery is free for orders above ₹4,000. A nominal ₹45 freight charge applies on orders below ₹5,000 for local delivery. Outstation charges vary by distance.",
       },
       {
         q: "How do I track my order?",
@@ -82,10 +82,6 @@ const FAQ_DATA: FAQGroup[] = [
       {
         q: "What payment methods do you accept?",
         a: "We accept UPI (GPay, PhonePe, Paytm), NEFT/RTGS bank transfer, and cheque for established accounts. Cash payment is accepted at our Padrauna counter.",
-      },
-      {
-        q: "When is payment due?",
-        a: "For new retailers, payment is due before dispatch. For established accounts with a clean payment history, we offer Net 7 credit terms at our discretion.",
       },
       {
         q: "Can I get a GST invoice for my orders?",

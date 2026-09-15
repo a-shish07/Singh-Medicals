@@ -254,7 +254,8 @@ export async function verifyOtp(
       retailerName: string;
       shopName: string;
       gstNumber: string;
-      drugLicence: string;
+      drugLicence20B: string;
+      drugLicence21B: string;
       profileImage: string;
       address: string;
       city: string;
@@ -283,7 +284,8 @@ export type EmailAuthProfile = {
   retailerName: string;
   shopName: string;
   gstNumber: string;
-  drugLicence: string;
+  drugLicence20B: string;
+  drugLicence21B: string;
   profileImage: string;
   address: string;
   city: string;
@@ -298,8 +300,9 @@ function mapEmailUser(user: {
   email: string;
   phone?: string | null;
   shopName?: string | null;
-  gstNumber?: string | null;
-  drugLicence?: string | null;
+   gstNumber?: string | null;
+  drugLicence20B?: string | null;
+  drugLicence21B?: string | null;
   profileImage?: string | null;
   address?: string | null;
   city?: string | null;
@@ -315,7 +318,8 @@ function mapEmailUser(user: {
     retailerName: user.name,
     shopName: user.shopName || "",
     gstNumber: user.gstNumber || "",
-    drugLicence: user.drugLicence || "",
+    drugLicence20B: user.drugLicence20B || "",
+    drugLicence21B: user.drugLicence21B || "",
     profileImage: user.profileImage || "",
     address: user.address || "",
     city: user.city || "",
@@ -350,7 +354,10 @@ export async function registerWithEmail(input: {
   name: string;
   email: string;
   password: string;
-  phone?: string;
+  phone: string;
+  drugLicence20B: string;
+  drugLicence21B: string;
+  gstNumber?: string;
 }) {
   const response = await request<{
     token: string;
@@ -408,7 +415,8 @@ export async function updateCustomerProfile(
     phone?: string;
     shopName?: string;
     gstNumber?: string;
-    drugLicence?: string;
+    drugLicence20B?: string;
+    drugLicence21B?: string;
     profileImage?: string;
     address?: string;
     city?: string;
@@ -676,6 +684,31 @@ export async function createAdminProduct(
   );
 
   return productFromApi(response);
+}
+
+export async function sendTrackingEmail(
+  token: string,
+  orderId: string,
+  trackingId: string,
+  deliveryPartner: string
+) {
+  const response = await request<any>(
+    `/api/admin/orders/${encodeURIComponent(orderId)}/tracking-email`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        trackingId,
+        deliveryPartner,
+      }),
+    }
+  );
+
+  return {
+    order: orderFromApi(response.order),
+  };
 }
 
 /* =========================================================
