@@ -387,17 +387,29 @@ const serializeProduct = (product) => {
   };
 };
 
-const serializeOrder = (order) => ({
-  ...order,
-  subtotal: Number(order.subtotal),
-  gstTotal: Number(order.gstTotal || 0),
-  shippingTotal: Number(order.shippingTotal || 0),
-  grandTotal: Number(order.grandTotal || order.subtotal),
-  items: (order.items || []).map((item) => ({
-    ...item,
-    unitPrice: Number(item.unitPrice),
-  })),
-});
+const serializeOrder = (order) => {
+  const subtotal = Number(order.subtotal || 0);
+  const gstTotal = Number(order.gstTotal || 0);
+  const shippingTotal = Number(order.shippingTotal || 0);
+
+  const grandTotal = Number(
+    order.grandTotal ?? (subtotal + gstTotal + shippingTotal)
+  );
+
+  return {
+    ...order,
+    subtotal,
+    gstTotal,
+    shippingTotal,
+    grandTotal,
+    total: grandTotal,
+
+    items: (order.items || []).map((item) => ({
+      ...item,
+      unitPrice: Number(item.unitPrice || 0),
+    })),
+  };
+};
 
 const parseDate = (value) => {
   const date = new Date(String(value || '').trim());
