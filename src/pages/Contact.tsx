@@ -42,7 +42,7 @@ export default function Contact() {
     {
       label: "Address",
       value:
-        "Singh Medical Complex, Station Road,\nPadrauna, Kushinagar, UP — 274304",
+        "Garun Nagar,Padrauna, \n Uttar Pradesh — 274304",
       icon: (
         <svg
           className="h-5 w-5"
@@ -67,7 +67,7 @@ export default function Contact() {
 
     {
       label: "Phone",
-      value: "+91 98765 43210",
+      value: "+91 8174958839",
       icon: (
         <svg
           className="h-5 w-5"
@@ -87,7 +87,7 @@ export default function Contact() {
 
     {
       label: "Email",
-      value: "orders@singhmedical.in",
+      value: "singhmedical151@gmail.com",
       icon: (
         <svg
           className="h-5 w-5"

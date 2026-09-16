@@ -18,7 +18,8 @@ import {
   loadCustomerOrders,
   loadAdminOrders,
   loadAdminProducts,
-  loadBootstrap,
+  loadProducts,
+  loadProductsByIds,
   lookupOrder,
   requestOtp as apiRequestOtp,
   updateOrderStatus as apiUpdateOrderStatus,
@@ -310,14 +311,14 @@ export function AppProvider({
 
     async function hydrate() {
       try {
-        const bootstrap = await loadBootstrap();
+        const productPage = await loadProducts({ page: 1, limit: 50 });
 
         if (cancelled) {
           return;
         }
 
-        setProducts(bootstrap.products || []);
-setOrders(bootstrap.orders || []);
+        setProducts(productPage.products || []);
+        setOrders([]);
       } catch {
   if (!cancelled) {
     setProducts([]);
@@ -368,6 +369,35 @@ setOrders(bootstrap.orders || []);
   useEffect(() => {
   safeWrite(CART_ITEMS_KEY, cartItems);
 }, [cartItems]);
+
+  // Keep cart products available even when the catalogue is paginated.
+  // Only product IDs that are actually in the persisted cart are fetched.
+  useEffect(() => {
+    let cancelled = false;
+
+    const missingIds = cartItems
+      .map((item) => item.productId)
+      .filter((id) => !products.some((product) => product.id === id));
+
+    if (!missingIds.length) return;
+
+    loadProductsByIds(missingIds)
+      .then(({ products: missingProducts }) => {
+        if (cancelled || !missingProducts.length) return;
+        setProducts((previous) => {
+          const byId = new Map(previous.map((product) => [product.id, product]));
+          for (const product of missingProducts) byId.set(product.id, product);
+          return [...byId.values()];
+        });
+      })
+      .catch(() => {
+        // Keep existing cart state; the normal cart/product error handling remains unchanged.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cartItems, products]);
 
   // Validate persisted customer/admin sessions when the app starts.
   // A token that is expired, revoked, malformed, or belongs to the wrong
@@ -948,9 +978,13 @@ const saveCustomerProfile = useCallback(
   );
 
   const refreshProducts = useCallback(async () => {
-  const response = await loadBootstrap();
-  setProducts(response.products || []);
-}, []);
+    const response = await loadProducts({ page: 1, limit: 50 });
+    setProducts((previous) => {
+      const byId = new Map(previous.map((product) => [product.id, product]));
+      for (const product of response.products || []) byId.set(product.id, product);
+      return [...byId.values()];
+    });
+  }, []);
 
   const refreshOrders = useCallback(async () => {
     if (!customerToken) { setOrders([]); return; }
@@ -965,7 +999,7 @@ const saveCustomerProfile = useCallback(
 
     const [orderResponse, productResponse] = await Promise.all([
       loadAdminOrders(adminToken),
-      loadAdminProducts(adminToken),
+      loadAdminProducts(adminToken, { page: 1, limit: 50 }),
     ]);
 
     setOrders(orderResponse.orders);

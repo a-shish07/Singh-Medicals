@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent } from 'react';
 import { useApp } from '../context';
 import type { Category, Product } from '../types';
 import { calculateLine } from '../lib/pricing';
+import { loadProducts } from '../lib/api';
 
 const CATEGORIES: (Category | 'All')[] = [
   'All',
@@ -1120,6 +1121,7 @@ function ProductCard({
 export default function Catalogue() {
   const {
     products,
+    setProducts,
     cartItems,
     addToCart,
     updateQty,
@@ -1127,77 +1129,71 @@ export default function Catalogue() {
     navigateToProduct,
   } = useApp();
 
-  const [search, setSearch] =
-    useState('');
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<Category | 'All'>('All');
+  const [company, setCompany] = useState('All');
+  const [page, setPage] = useState(1);
+  const [catalogueProducts, setCatalogueProducts] = useState<Product[]>([]);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const requestId = useRef(0);
+  const PAGE_SIZE = 50;
 
-  const [category, setCategory] =
-    useState<Category | 'All'>(
-      'All'
-    );
+  useEffect(() => {
+    setPage(1);
+  }, [search, category, company]);
 
-  const [company, setCompany] =
-    useState('All');
+  useEffect(() => {
+    const currentRequest = ++requestId.current;
+    let cancelled = false;
 
-  /*
-   * Search + filters
-   */
-  const filtered = useMemo(() => {
-    const q =
-      search
-        .trim()
-        .toLowerCase();
+    const fetchProducts = async () => {
+      setLoadingProducts(true);
+      try {
+        const response = await loadProducts({
+          page,
+          limit: PAGE_SIZE,
+          q: search,
+          category,
+          company,
+        });
 
-    return products.filter(
-      (product) => {
-        const matchSearch =
-          !q ||
-          product.name
-            .toLowerCase()
-            .includes(q) ||
-          product.company
-            .toLowerCase()
-            .includes(q) ||
-          product.composition
-            .toLowerCase()
-            .includes(q);
+        if (cancelled || currentRequest !== requestId.current) return;
 
-        const matchCategory =
-          category === 'All' ||
-          product.category ===
-            category;
+        setCatalogueProducts(response.products);
+        setTotalProducts(response.pagination.total);
+        setTotalPages(Math.max(1, response.pagination.totalPages));
+        setCompanies(response.companies);
 
-        const matchCompany =
-          company === 'All' ||
-          product.company ===
-            company;
-
-        return (
-          matchSearch &&
-          matchCategory &&
-          matchCompany
+        // Keep the existing product context aligned with the current page.
+        // Cart-only products are fetched separately by AppProvider when needed.
+        setProducts(response.products);
+      } catch (error) {
+        if (cancelled || currentRequest !== requestId.current) return;
+        setCatalogueProducts([]);
+        setTotalProducts(0);
+        setTotalPages(1);
+        addToast(
+          error instanceof Error ? error.message : 'Could not load products.',
+          'error'
         );
+      } finally {
+        if (!cancelled && currentRequest === requestId.current) {
+          setLoadingProducts(false);
+        }
       }
-    );
-  }, [
-    search,
-    category,
-    company,
-    products,
-  ]);
+    };
 
-  /*
-   * Company filter
-   */
-  const companies = useMemo(() => {
-    return [
-      ...new Set(
-        products.map(
-          (product) =>
-            product.company
-        )
-      ),
-    ].sort();
-  }, [products]);
+    void fetchProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [search, category, company, page, addToast, setProducts]);
+
+  const filtered = catalogueProducts;
 
   return (
     <div className="min-h-screen">
@@ -1363,19 +1359,17 @@ export default function Catalogue() {
       ===================================================== */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
 
-        {search && (
+        {search && totalProducts > 0 && (
           <p className="text-sm text-[#6B7280] mb-4">
-            {filtered.length > 0
-              ? `${filtered.length} result${
-                  filtered.length === 1
-                    ? ''
-                    : 's'
-                } for "${search}"`
-              : `No results for "${search}"`}
+            {`${totalProducts} result${totalProducts === 1 ? '' : 's'} for "${search}"`}
           </p>
         )}
 
-        {filtered.length === 0 ? (
+        {loadingProducts ? (
+          <div className="flex items-center justify-center py-24 text-sm text-[#6B7280]">
+            Loading medicines…
+          </div>
+        ) : filtered.length === 0 ? (
 
           /* =================================================
              EMPTY STATE
@@ -1433,11 +1427,9 @@ export default function Catalogue() {
 
           </div>
 
-        ) : (
+        ) : (<>
 
-          /* =================================================
-             PRODUCT GRID
-          ================================================= */
+         
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 
             {filtered.map(
@@ -1451,7 +1443,39 @@ export default function Catalogue() {
 
           </div>
 
-        )}
+          {totalPages > 1 && (
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                disabled={page === 1 || loadingProducts}
+                onClick={() => {
+                  setPage((current) => Math.max(1, current - 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-4 py-2 text-sm font-semibold rounded-xl border border-black/[0.08] bg-white text-[#6B7280] hover:bg-[#E8F5EE] hover:text-[#0D9A55] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+
+              <span className="px-3 py-2 text-sm font-semibold text-[#6B7280]">
+                Page {page} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={page >= totalPages || loadingProducts}
+                onClick={() => {
+                  setPage((current) => Math.min(totalPages, current + 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-4 py-2 text-sm font-semibold rounded-xl border border-black/[0.08] bg-white text-[#6B7280] hover:bg-[#E8F5EE] hover:text-[#0D9A55] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+
+        </>)}
 
       </div>
 

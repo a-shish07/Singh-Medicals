@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../../context';
 import type { Product } from '../../types';
 import { Plus, X } from "lucide-react";
+import { loadAdminProducts } from '../../lib/api';
 
 function parseProductImages(image?: string) {
   if (!image) return [];
@@ -16,7 +17,7 @@ function parseProductImages(image?: string) {
 }
 
 export default function ProductsTab() {
-  const { products, updateProduct, createProduct, addToast } = useApp();
+  const { products, setProducts, adminToken, updateProduct, createProduct, addToast } = useApp();
 
   type PricingType =
     | 'NONE'
@@ -99,9 +100,68 @@ export default function ProductsTab() {
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [page, setPage] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [categories, setCategories] = useState<string[]>(['All']);
+  const [productOptions, setProductOptions] = useState<Array<{ id: string; name: string; pack: string }>>([]);
+  const [stats, setStats] = useState({
+    totalMedicines: 0,
+    activeStock: 0,
+    productsOnOffer: 0,
+    lowStock: 0,
+  });
+  const [loadingProducts, setLoadingProducts] = useState(true);
 
   const adminProducts = products as AdminProduct[];
-  const categories = ['All', ...Array.from(new Set(adminProducts.map(p => p.category).filter(Boolean))).sort()];
+  const PAGE_SIZE = 50;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, categoryFilter, offerFilter]);
+
+  useEffect(() => {
+    if (!adminToken) return;
+
+    let cancelled = false;
+    setLoadingProducts(true);
+
+    loadAdminProducts(adminToken, {
+      page,
+      limit: PAGE_SIZE,
+      q: search,
+      category: categoryFilter,
+      offer: offerFilter,
+      sortKey,
+      sortDir,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setProducts(response.products);
+        setTotalProducts(response.pagination.total);
+        setTotalPages(Math.max(1, response.pagination.totalPages));
+        setCategories(['All', ...response.categories.filter(Boolean)]);
+        setProductOptions(response.productOptions);
+        setStats(response.stats);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        addToast(
+          error instanceof Error ? error.message : 'Could not load products.',
+          'error'
+        );
+        setProducts([]);
+        setTotalProducts(0);
+        setTotalPages(1);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProducts(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminToken, page, search, categoryFilter, offerFilter, sortKey, sortDir, addToast, setProducts]);
 
   const calculatePreview = (source: ProductForm) => {
     const mrp = Number(source.mrp) || 0;
@@ -309,25 +369,7 @@ export default function ProductsTab() {
   const hasOffer = (p: AdminProduct) =>
     p.discountType && p.discountType !== 'NONE';
 
-  const filtered = adminProducts
-    .filter(p => {
-      const q = search.toLowerCase().trim();
-      const matchesSearch = !q ||
-        p.name.toLowerCase().includes(q) ||
-        p.company.toLowerCase().includes(q) ||
-        p.composition.toLowerCase().includes(q);
-      const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
-      const matchesOffer = offerFilter === 'All' ||
-        (offerFilter === 'Offers' ? Boolean(hasOffer(p)) : !hasOffer(p));
-      return matchesSearch && matchesCategory && matchesOffer;
-    })
-    .sort((a, b) => {
-      const dir = sortDir === 'asc' ? 1 : -1;
-      if (sortKey === 'name') return a.name.localeCompare(b.name) * dir;
-      if (sortKey === 'mrp') return (Number(a.mrp) - Number(b.mrp)) * dir;
-      if (sortKey === 'stock') return (Number(a.stock || 0) - Number(b.stock || 0)) * dir;
-      return (getEffectivePtr(a) - getEffectivePtr(b)) * dir;
-    });
+  const filtered = adminProducts;
 
   const discountLabel = (p: AdminProduct) => {
     const type = p.discountType || 'NONE';
@@ -522,7 +564,7 @@ const productFormModal = (adding || editing) ? (
                           <span className="text-xs font-bold text-slate-700">Free bonus product</span>
                           <select value={form.bonusProductId} onChange={e => setField('bonusProductId', e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.75 text-sm outline-none focus:border-blue-500">
                             <option value="">Select the product given free</option>
-                            {adminProducts.filter(product => product.id !== editing?.id).map(product => <option key={product.id} value={product.id}>{product.name} — {product.pack}</option>)}
+                            {productOptions.filter(product => product.id !== editing?.id).map(product => <option key={product.id} value={product.id}>{product.name} — {product.pack}</option>)}
                           </select>
                         </label>
                       )}
@@ -567,10 +609,10 @@ const productFormModal = (adding || editing) ? (
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          ['Total Medicines', adminProducts.length, 'catalogue'],
-          ['Active Stock', adminProducts.reduce((s, p) => s + Number(p.stock || 0), 0), 'units'],
-          ['Products on Offer', adminProducts.filter(hasOffer).length, 'offers'],
-          ['Low Stock', adminProducts.filter(p => Number(p.stock || 0) <= 10).length, 'need attention'],
+          ['Total Medicines', stats.totalMedicines, 'catalogue'],
+          ['Active Stock', stats.activeStock, 'units'],
+          ['Products on Offer', stats.productsOnOffer, 'offers'],
+          ['Low Stock', stats.lowStock, 'need attention'],
         ].map(([label, value, note]) => (
           <div key={label as string} className="bg-white rounded-2xl border border-slate-200 p-4">
             <p className="text-[10px] uppercase tracking-wide font-bold text-slate-400">{label as string}</p>
@@ -641,8 +683,32 @@ const productFormModal = (adding || editing) ? (
           </table>
         </div>
         {filtered.length === 0 && <div className="px-6 py-12 text-center text-sm text-slate-500">No medicines match your search.</div>}
-        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">Showing {filtered.length} of {adminProducts.length} medicines</div>
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">Showing {filtered.length} of {totalProducts} medicines</div>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={page === 1 || loadingProducts}
+            onClick={() => setPage(current => Math.max(1, current - 1))}
+            className="px-4 py-2 text-sm font-semibold rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="px-3 py-2 text-sm font-semibold text-slate-500">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages || loadingProducts}
+            onClick={() => setPage(current => Math.min(totalPages, current + 1))}
+            className="px-4 py-2 text-sm font-semibold rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       <div className="md:hidden space-y-3">
         {filtered.map(product => (

@@ -249,6 +249,51 @@ export async function loadBootstrap() {
   };
 }
 
+export type ProductPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export async function loadProducts(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  category?: string;
+  company?: string;
+}) {
+  const query = new URLSearchParams();
+  query.set("page", String(params.page || 1));
+  query.set("limit", String(Math.min(params.limit || 50, 50)));
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.category && params.category !== "All") query.set("category", params.category);
+  if (params.company && params.company !== "All") query.set("company", params.company);
+
+  const response = await request<{
+    products: any[];
+    companies: string[];
+    pagination: ProductPagination;
+  }>(`/api/products?${query.toString()}`);
+
+  return {
+    products: response.products.map(productFromApi),
+    companies: response.companies || [],
+    pagination: response.pagination,
+  };
+}
+
+export async function loadProductsByIds(ids: string[]) {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (!uniqueIds.length) return { products: [] as Product[] };
+
+  const response = await request<any[]>(
+    `/api/products?ids=${encodeURIComponent(uniqueIds.join(","))}`
+  );
+
+  return { products: response.map(productFromApi) };
+}
+
 /* =========================================================
    OTP AUTH
 ========================================================= */
@@ -624,19 +669,81 @@ export async function submitContactQuery(payload: {
 ========================================================= */
 
 export async function loadAdminProducts(
-  token: string
+  token: string,
+  params: {
+    page?: number;
+    limit?: number;
+    q?: string;
+    category?: string;
+    offer?: "All" | "Offers" | "No Offer";
+    sortKey?: "name" | "mrp" | "effectivePtr" | "stock";
+    sortDir?: "asc" | "desc";
+  } = {}
 ) {
-  const response = await request<any[]>(
-    "/api/admin/products",
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
+  const query = new URLSearchParams();
+
+  query.set("page", String(Math.max(1, params.page || 1)));
+
+  query.set(
+    "limit",
+    String(Math.min(Math.max(1, params.limit || 50), 50))
   );
 
+  if (params.q?.trim()) {
+    query.set("q", params.q.trim());
+  }
+
+  if (params.category && params.category !== "All") {
+    query.set("category", params.category);
+  }
+
+  if (params.offer && params.offer !== "All") {
+    query.set("offer", params.offer);
+  }
+
+  query.set("sortKey", params.sortKey || "name");
+  query.set("sortDir", params.sortDir || "asc");
+
+  const response = await request<{
+    products: any[];
+    categories: string[];
+    productOptions: Array<{
+      id: string;
+      name: string;
+      pack: string;
+    }>;
+    pagination: ProductPagination;
+    stats: {
+      totalMedicines: number;
+      activeStock: number;
+      productsOnOffer: number;
+      lowStock: number;
+    };
+  }>(`/api/admin/products?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  // Make sure products is always an array before using .map()
+  const products = Array.isArray(response.products)
+    ? response.products
+    : [];
+
   return {
-    products: response.map(productFromApi),
+    products: products.map(productFromApi),
+
+    categories: Array.isArray(response.categories)
+      ? response.categories
+      : [],
+
+    productOptions: Array.isArray(response.productOptions)
+      ? response.productOptions
+      : [],
+
+    pagination: response.pagination,
+
+    stats: response.stats,
   };
 }
 

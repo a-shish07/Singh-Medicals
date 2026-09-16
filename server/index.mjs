@@ -794,54 +794,78 @@ if (!drugLicence21B?.trim()) {
 app.get('/api/products', async (req, res, next) => {
   try {
     const q = String(req.query.q || '').trim();
+    const ids = String(req.query.ids || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const category = String(req.query.category || '').trim();
+    const company = String(req.query.company || '').trim();
+    const requestedPage = Number.parseInt(String(req.query.page || '1'), 10);
+    const requestedLimit = Number.parseInt(String(req.query.limit || '50'), 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 50)
+      : 50;
 
-    const products = await prisma.product.findMany({
-      where: {
-        isActive: true,
-        ...(q
-          ? {
-              OR: [
-                {
-                  name: {
-                    contains: q,
-                    mode: 'insensitive',
-                  },
-                },
-                {
-                  company: {
-                    contains: q,
-                    mode: 'insensitive',
-                  },
-                },
-                {
-                  composition: {
-                    contains: q,
-                    mode: 'insensitive',
-                  },
-                },
-                {
-                  sku: {
-                    contains: q,
-                    mode: 'insensitive',
-                  },
-                },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        inventoryBatches: {
-          orderBy: {
-            expiryDate: 'asc',
-          },
+    const where = {
+      isActive: true,
+      ...(ids.length ? { id: { in: ids } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { company: { contains: q, mode: 'insensitive' } },
+              { composition: { contains: q, mode: 'insensitive' } },
+              { sku: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(category && category !== 'All' ? { category } : {}),
+      ...(company && company !== 'All' ? { company } : {}),
+    };
+
+    // Cart/product-detail lookups intentionally bypass pagination because only
+    // the explicitly requested product IDs are returned.
+    if (ids.length) {
+      const products = await prisma.product.findMany({
+        where,
+        include: {
+          inventoryBatches: { orderBy: { expiryDate: 'asc' } },
         },
-      },
-      orderBy: {
-        name: 'asc',
+        orderBy: { name: 'asc' },
+      });
+      return res.json(products.map(serializeProduct));
+    }
+
+    const [products, total, companies] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          inventoryBatches: { orderBy: { expiryDate: 'asc' } },
+        },
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where: { isActive: true },
+        select: { company: true },
+        distinct: ['company'],
+        orderBy: { company: 'asc' },
+      }),
+    ]);
+
+    res.json({
+      products: products.map(serializeProduct),
+      companies: companies.map((item) => item.company).filter(Boolean),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
-
-    res.json(products.map(serializeProduct));
   } catch (error) {
     next(error);
   }
@@ -1244,25 +1268,95 @@ app.get(
   '/api/admin/products',
   authenticate,
   adminOnly,
-  async (_req, res, next) => {
+  async (req, res, next) => {
     try {
-      const products =
-        await prisma.product.findMany({
-          include: {
-            inventoryBatches: {
-              orderBy: {
-                expiryDate: 'asc',
-              },
-            },
-          },
-          orderBy: {
-            name: 'asc',
-          },
-        });
+      const q = String(req.query.q || '').trim();
+      const category = String(req.query.category || '').trim();
+      const offer = String(req.query.offer || 'All').trim();
+      const requestedPage = Number.parseInt(String(req.query.page || '1'), 10);
+      const requestedLimit = Number.parseInt(String(req.query.limit || '50'), 10);
+      const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, 50)
+        : 50;
+      const sortKey = ['name', 'mrp', 'effectivePtr', 'stock'].includes(String(req.query.sortKey))
+        ? String(req.query.sortKey)
+        : 'name';
+      const sortDir = String(req.query.sortDir || 'asc') === 'desc' ? 'desc' : 'asc';
 
-      res.json(
-        products.map(serializeProduct)
-      );
+      const where = {
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { company: { contains: q, mode: 'insensitive' } },
+                { composition: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+        ...(category && category !== 'All' ? { category } : {}),
+        ...(offer === 'Offers'
+          ? { discountType: { not: 'NONE' } }
+          : offer === 'No Offer'
+            ? { discountType: 'NONE' }
+            : {}),
+      };
+
+      // Keep the existing effective-PTR sort semantics. For the other fields,
+      // let PostgreSQL perform the ordering before pagination.
+      let orderBy;
+      if (sortKey === 'effectivePtr') {
+        orderBy = { effectivePtr: sortDir };
+      } else if (sortKey === 'mrp') {
+        orderBy = { mrp: sortDir };
+      } else if (sortKey === 'stock') {
+        orderBy = { stock: sortDir };
+      } else {
+        orderBy = { name: sortDir };
+      }
+
+      const [products, total, categories, totalMedicines, stockAggregate, offerCount, lowStockCount, productOptions] =
+        await Promise.all([
+          prisma.product.findMany({
+            where,
+            include: { inventoryBatches: { orderBy: { expiryDate: 'asc' } } },
+            orderBy,
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          prisma.product.count({ where }),
+          prisma.product.findMany({
+            select: { category: true },
+            distinct: ['category'],
+            orderBy: { category: 'asc' },
+          }),
+          prisma.product.count(),
+          prisma.product.aggregate({ _sum: { stock: true } }),
+          prisma.product.count({ where: { discountType: { not: 'NONE' } } }),
+          prisma.product.count({ where: { stock: { lte: 10 } } }),
+          prisma.product.findMany({
+            select: { id: true, name: true, pack: true },
+            orderBy: { name: 'asc' },
+          }),
+        ]);
+
+      res.json({
+        products: products.map(serializeProduct),
+        categories: categories.map((item) => item.category).filter(Boolean),
+        productOptions,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+        stats: {
+          totalMedicines,
+          activeStock: Number(stockAggregate._sum.stock || 0),
+          productsOnOffer: offerCount,
+          lowStock: lowStockCount,
+        },
+      });
     } catch (error) {
       next(error);
     }
