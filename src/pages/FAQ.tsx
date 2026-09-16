@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -134,12 +133,7 @@ const topicIcons: Record<string, React.ReactElement> = {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <circle
-        cx="8.5"
-        cy="8.5"
-        r="1.2"
-        fill="currentColor"
-      />
+      <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" />
     </svg>
   ),
 
@@ -151,20 +145,8 @@ const topicIcons: Record<string, React.ReactElement> = {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <circle
-        cx="7"
-        cy="18"
-        r="2"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
-      <circle
-        cx="18"
-        cy="18"
-        r="2"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <circle cx="7" cy="18" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18" cy="18" r="2" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   ),
 
@@ -190,13 +172,7 @@ const topicIcons: Record<string, React.ReactElement> = {
 
   "Account & Registration": (
     <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
-      <circle
-        cx="12"
-        cy="8"
-        r="3.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.8" />
       <path
         d="M5 20c.7-3.2 3.2-5 7-5s6.3 1.8 7 5"
         stroke="currentColor"
@@ -340,12 +316,10 @@ export default function FAQ() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8FAF8] text-[#1C1C1E]">
-
       {/* =========================
           HERO SECTION
       ========================== */}
       <section className="relative overflow-hidden border-b border-black/[0.05] bg-white">
-
         {/* Background decoration */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
@@ -381,9 +355,7 @@ export default function FAQ() {
         />
 
         <div className="relative mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
-
           <div className="max-w-3xl">
-
             {/* Badge */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
@@ -472,9 +444,7 @@ export default function FAQ() {
           FAQ CONTENT
       ========================== */}
       <main className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:py-16">
-
         <div className="grid grid-cols-1 gap-7 lg:grid-cols-12 lg:gap-10">
-
           {/* =========================
               TOPICS SIDEBAR
           ========================== */}
@@ -493,7 +463,6 @@ export default function FAQ() {
               </div>
 
               <div className="overflow-hidden rounded-3xl border border-black/[0.05] bg-white p-2 shadow-[0_8px_35px_rgba(0,0,0,0.05)]">
-
                 {FAQ_DATA.map((group, index) => {
                   const active = activeGroup === group.topic;
 
@@ -531,9 +500,7 @@ export default function FAQ() {
                       <span className="relative z-10 min-w-0 flex-1">
                         <span
                           className={`block text-sm font-bold ${
-                            active
-                              ? "text-[#0D9A55]"
-                              : "text-[#374151]"
+                            active ? "text-[#0D9A55]" : "text-[#374151]"
                           }`}
                         >
                           {group.topic}
@@ -559,7 +526,6 @@ export default function FAQ() {
               </div>
 
               {/* Support card */}
-             
             </motion.div>
           </aside>
 
@@ -567,7 +533,6 @@ export default function FAQ() {
               QUESTIONS
           ========================== */}
           <section className="lg:col-span-8">
-
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeFAQ.topic}
@@ -587,7 +552,6 @@ export default function FAQ() {
                   duration: 0.3,
                 }}
               >
-
                 {/* Section heading */}
                 <div className="mb-5 flex items-end justify-between gap-4">
                   <div>
@@ -617,76 +581,70 @@ export default function FAQ() {
                       key={item.q}
                       className="border-b border-black/[0.06] last:border-0"
                     >
-                      <AccordionItem
-                        q={item.q}
-                        a={item.a}
-                        index={index}
-                      />
+                      <AccordionItem q={item.q} a={item.a} index={index} />
                     </div>
                   ))}
                 </div>
               </motion.div>
             </AnimatePresence>
 
-             <motion.div
-                whileHover={{ y: -3 }}
-                transition={{ duration: 0.25 }}
-                className="relative mt-5 overflow-hidden rounded-3xl bg-[#0D9A55] p-6 text-white shadow-[0_15px_40px_rgba(13,154,85,0.18)]"
-              >
-                <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10" />
-                <div className="absolute -bottom-14 -left-10 h-32 w-32 rounded-full bg-white/[0.06]" />
+            <motion.div
+              whileHover={{ y: -3 }}
+              transition={{ duration: 0.25 }}
+              className="relative mt-5 overflow-hidden rounded-3xl bg-[#0D9A55] p-6 text-white shadow-[0_15px_40px_rgba(13,154,85,0.18)]"
+            >
+              <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10" />
+              <div className="absolute -bottom-14 -left-10 h-32 w-32 rounded-full bg-white/[0.06]" />
 
-                <div className="relative">
-                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
-                    <svg
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.8 8.8 0 0 1-3.7-.8L3 20l1.2-4.8A8.2 8.2 0 0 1 3 11.5 8.38 8.38 0 0 1 12 3a8.38 8.38 0 0 1 9 8.5Z"
-                      />
-                    </svg>
-                  </div>
-
-                  <h3 className="mb-2 text-lg font-extrabold">
-                    Still need help?
-                  </h3>
-
-                  <p className="mb-5 text-sm leading-6 text-white/80">
-                    Our support team is available Mon–Sat, 9 AM–7 PM.
-                  </p>
-
-                  <a
-                    href="https://wa.me/919876543210"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#0D9A55] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+              <div className="relative">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
                   >
-                    Ask on WhatsApp
-
-                    <svg
-                      className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M12.04 2C6.58 2 2.14 6.44 2.14 11.9c0 1.75.46 3.46 1.34 4.96L2 22l5.29-1.39a9.86 9.86 0 0 0 4.75 1.21h.01c5.46 0 9.9-4.44 9.9-9.9S17.5 2 12.04 2Zm5.77 14.1c-.24.67-1.39 1.28-1.91 1.36-.49.07-1.11.1-1.8-.11-.42-.13-.95-.31-1.64-.61-2.89-1.25-4.77-4.34-4.92-4.54-.14-.2-1.18-1.57-1.18-2.99s.74-2.12 1-2.4c.25-.28.55-.35.73-.35.18 0 .36 0 .52.01.17.01.39-.07.61.46.22.53.75 1.83.82 1.96.07.13.11.29.02.46-.08.18-.13.29-.26.45-.13.15-.27.34-.39.46-.13.13-.26.27-.11.53.15.26.67 1.11 1.44 1.8.99.88 1.82 1.15 2.08 1.28.26.13.41.11.56-.07.15-.18.64-.75.81-1.01.17-.26.34-.22.57-.13.24.09 1.51.71 1.77.84.26.13.44.2.5.31.07.1.07.62-.17 1.29Z" />
-                    </svg>
-                  </a>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.8 8.8 0 0 1-3.7-.8L3 20l1.2-4.8A8.2 8.2 0 0 1 3 11.5 8.38 8.38 0 0 1 12 3a8.38 8.38 0 0 1 9 8.5Z"
+                    />
+                  </svg>
                 </div>
-              </motion.div>
+
+                <h3 className="mb-2 text-lg font-extrabold">
+                  Still need help?
+                </h3>
+
+                <p className="mb-5 text-sm leading-6 text-white/80">
+                  Our support team is available Mon–Sat, 9 AM–7 PM.
+                </p>
+
+                <a
+                  href="https://wa.me/918174958839"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#0D9A55] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+                >
+                  Ask on WhatsApp
+                  <svg
+                    className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M12.04 2C6.58 2 2.14 6.44 2.14 11.9c0 1.75.46 3.46 1.34 4.96L2 22l5.29-1.39a9.86 9.86 0 0 0 4.75 1.21h.01c5.46 0 9.9-4.44 9.9-9.9S17.5 2 12.04 2Zm5.77 14.1c-.24.67-1.39 1.28-1.91 1.36-.49.07-1.11.1-1.8-.11-.42-.13-.95-.31-1.64-.61-2.89-1.25-4.77-4.34-4.92-4.54-.14-.2-1.18-1.57-1.18-2.99s.74-2.12 1-2.4c.25-.28.55-.35.73-.35.18 0 .36 0 .52.01.17.01.39-.07.61.46.22.53.75 1.83.82 1.96.07.13.11.29.02.46-.08.18-.13.29-.26.45-.13.15-.27.34-.39.46-.13.13-.26.27-.11.53.15.26.67 1.11 1.44 1.8.99.88 1.82 1.15 2.08 1.28.26.13.41.11.56-.07.15-.18.64-.75.81-1.01.17-.26.34-.22.57-.13.24.09 1.51.71 1.77.84.26.13.44.2.5.31.07.1.07.62-.17 1.29Z" />
+                  </svg>
+                </a>
+              </div>
+            </motion.div>
 
             {/* =========================
                 BOTTOM CTA
             ========================== */}
-          
           </section>
         </div>
       </main>
     </div>
   );
-};
+}

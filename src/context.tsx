@@ -559,8 +559,48 @@ setOrders(bootstrap.orders || []);
         return;
       }
 
-      const minimum = Math.max(1, Math.floor(Number(product.minOrderQuantity || 1)));
-      const requestedQuantity = Math.max(minimum, Math.floor(Number(qty) || minimum));
+      const minimumOrderQuantity = Math.max(
+        1,
+        Math.floor(Number(product.minOrderQuantity || 1))
+      );
+      const discountType = String(product.discountType || "NONE");
+      const buyQuantity = Math.max(
+        1,
+        Math.floor(Number(product.buyQuantity || 0) || 1)
+      );
+      const freeQuantity = Math.max(
+        0,
+        Math.floor(Number(product.freeQuantity || 0) || 0)
+      );
+      const isSameProductOffer =
+        (discountType === "SAME_PRODUCT_BONUS" ||
+          discountType === "SAME_PRODUCT_BONUS_AND_DISCOUNT") &&
+        freeQuantity > 0;
+
+      const quantityStep = isSameProductOffer
+        ? buyQuantity
+        : minimumOrderQuantity;
+
+      const minimum = Math.max(
+        minimumOrderQuantity,
+        isSameProductOffer ? buyQuantity : minimumOrderQuantity
+      );
+
+      if (maxPaidQuantity < minimum) {
+        addToast(
+          `${product.name} does not have enough stock to meet the minimum quantity and offer.`
+        );
+        return;
+      }
+
+      const rawQuantity = Math.max(
+        minimum,
+        Math.floor(Number(qty) || minimum)
+      );
+      const requestedQuantity = Math.max(
+        minimum,
+        Math.ceil(rawQuantity / quantityStep) * quantityStep
+      );
 
       setCartItems((prev) => {
         const existing = prev.find(
@@ -636,21 +676,53 @@ setOrders(bootstrap.orders || []);
         return;
       }
 
-      const requestedQuantity = Math.floor(
-        Number(qty)
+      const requestedQuantity = Math.floor(Number(qty));
+
+      const minimumOrderQuantity = Math.max(
+        1,
+        Math.floor(Number(product.minOrderQuantity || 1))
+      );
+      const discountType = String(product.discountType || "NONE");
+      const buyQuantity = Math.max(
+        1,
+        Math.floor(Number(product.buyQuantity || 0) || 1)
+      );
+      const freeQuantity = Math.max(
+        0,
+        Math.floor(Number(product.freeQuantity || 0) || 0)
+      );
+      const isSameProductOffer =
+        (discountType === "SAME_PRODUCT_BONUS" ||
+          discountType === "SAME_PRODUCT_BONUS_AND_DISCOUNT") &&
+        freeQuantity > 0;
+
+      const quantityStep = isSameProductOffer
+        ? buyQuantity
+        : minimumOrderQuantity;
+
+      const minimum = Math.max(
+        minimumOrderQuantity,
+        isSameProductOffer ? buyQuantity : minimumOrderQuantity
       );
 
-      const minimum = Math.max(1, Math.floor(Number(product.minOrderQuantity || 1)));
-      if (!Number.isFinite(requestedQuantity) || requestedQuantity < minimum) {
+      if (
+        !Number.isFinite(requestedQuantity) ||
+        requestedQuantity < minimum
+      ) {
         removeFromCart(productId);
         return;
       }
+
+      const normalizedQuantity = Math.max(
+        minimum,
+        Math.floor(requestedQuantity / quantityStep) * quantityStep
+      );
 
       const maxPaidQuantity =
         getMaxPaidQuantity(product);
 
       const nextQuantity = Math.min(
-        requestedQuantity,
+        normalizedQuantity,
         maxPaidQuantity
       );
 

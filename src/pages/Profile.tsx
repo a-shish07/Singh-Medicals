@@ -739,6 +739,11 @@ export default function Profile() {
       return;
     }
 
+    if (!/^[6-9]\d{9}$/.test(form.phone)) {
+  addToast("Please enter a valid 10-digit mobile number.","error");
+  return;
+}
+
     try {
       setSaving(true);
 
@@ -1113,13 +1118,21 @@ export default function Profile() {
               />
 
               <Field
-                label="Phone Number"
-                value={form.phone}
-                onChange={(value) =>
-                  updateField("phone", value)
-                }
-                placeholder="Enter phone number"
-              />
+  label="Phone Number"
+  value={form.phone}
+  onChange={(value) => {
+    const numericValue = value.replace(/\D/g, "");
+
+    // Don't allow first digit to be 0
+    if (numericValue.startsWith("0")) return;
+
+    // Maximum 10 digits
+    if (numericValue.length <= 10) {
+      updateField("phone", numericValue);
+    }
+  }}
+  placeholder="Enter 10 digit phone number"
+/>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

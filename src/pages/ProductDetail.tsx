@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "../context";
 import type { Product } from "../types";
 import { pageVariants, itemVariants, staggerContainer } from "../lib/motionVariants";
+import { calculateLine } from "../lib/pricing";
 
 function parseProductImages(image?: string) {
   if (!image) return [];
@@ -101,8 +102,25 @@ export default function ProductDetail() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
-    if (product) setLocalQty(Math.max(1, product.minOrderQuantity || 1));
-  }, [product?.id, product?.minOrderQuantity]);
+    if (product) {
+      const type = String(
+        (product as Product & { discountType?: string | null }).discountType || "NONE"
+      );
+      const isOffer =
+        type === "SAME_PRODUCT_BONUS" ||
+        type === "SAME_PRODUCT_BONUS_AND_DISCOUNT";
+      const buy = Math.max(
+        1,
+        Math.floor(
+          Number(
+            (product as Product & { buyQuantity?: number | null }).buyQuantity || 0
+          ) || 1
+        )
+      );
+      const min = Math.max(1, Number(product.minOrderQuantity) || 1);
+      setLocalQty(Math.max(min, isOffer ? buy : min));
+    }
+  }, [product?.id, product?.minOrderQuantity, (product as Product & { buyQuantity?: number | null } | undefined)?.buyQuantity]);
 
   /* =======================================================
      PRODUCT NOT FOUND
@@ -149,9 +167,49 @@ export default function ProductDetail() {
      DATA
   ====================================================== */
 
-  const effectivePrice = (product: Product) => product.effectivePtr ?? product.net;
+  const effectivePrice = (product: Product) =>
+    calculateLine(
+      product,
+      (product as Product & { buyQuantity?: number | null }).buyQuantity || 1
+    ).effectivePrice;
 
   const currentPrice = effectivePrice(product);
+
+  const discountType = String(
+    (product as Product & { discountType?: string | null }).discountType || "NONE"
+  );
+  const buyQuantity = Math.max(
+    1,
+    Math.floor(
+      Number(
+        (product as Product & { buyQuantity?: number | null }).buyQuantity || 0
+      ) || 1
+    )
+  );
+  const freeQuantity = Math.max(
+    0,
+    Math.floor(
+      Number(
+        (product as Product & { freeQuantity?: number | null }).freeQuantity || 0
+      ) || 0
+    )
+  );
+  const isSameProductOffer =
+    (discountType === "SAME_PRODUCT_BONUS" ||
+      discountType === "SAME_PRODUCT_BONUS_AND_DISCOUNT") &&
+    freeQuantity > 0;
+  const quantityStep = isSameProductOffer
+    ? buyQuantity
+    : Math.max(1, Number(product.minOrderQuantity) || 1);
+  const minimumQuantity = Math.max(
+    quantityStep,
+    Number(product.minOrderQuantity) || 1
+  );
+  const stock = Math.max(
+    0,
+    Math.floor(Number(product.stockStrips ?? product.stock ?? 0))
+  );
+
   const productImages = parseProductImages(product.image);
   const activeImage = productImages[activeImageIndex] || productImages[0];
 
@@ -169,19 +227,45 @@ export default function ProductDetail() {
   ====================================================== */
 
   const handleAdd = () => {
-    addToCart(product.id, localQty);
-    addToast(`${product.name} added to cart`);
-    setLocalQty(Math.max(1, product.minOrderQuantity || 1));
+    const quantity = Math.max(
+      minimumQuantity,
+      Math.floor(Number(localQty) || minimumQuantity)
+    );
+    const line = calculateLine(product, quantity);
+
+    if (line.totalStrips > stock) {
+      addToast(
+        `${product.name} does not have enough stock for this quantity.`,
+        "error"
+      );
+      return;
+    }
+
+    addToCart(product.id, quantity);
+    addToast(`${product.name} × ${quantity} added to cart`);
+    setLocalQty(minimumQuantity);
   };
-const minQty = Math.max(1, Number(product.minOrderQuantity) || 1);
 
-const decreaseLocalQty = () => {
-  setLocalQty((q) => Math.max(minQty, q - minQty));
-};
+  const decreaseLocalQty = () => {
+    setLocalQty((q) => Math.max(minimumQuantity, q - quantityStep));
+  };
 
-const increaseLocalQty = () => {
-  setLocalQty((q) => q + minQty);
-};
+  const increaseLocalQty = () => {
+    setLocalQty((q) => {
+      const next = q + quantityStep;
+      const line = calculateLine(product, next);
+
+      if (line.totalStrips > stock) {
+        addToast(
+          `Only ${stock} units are available for this offer.`,
+          "info"
+        );
+        return q;
+      }
+
+      return next;
+    });
+  };
 
   /* =======================================================
      RENDER
@@ -305,11 +389,11 @@ const increaseLocalQty = () => {
           <motion.div variants={itemVariants} className="flex flex-col">
             {/* Category + discount */}
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-xs font-semibold text-[#9CA3AF]">{product.category}</span>
+              <span className="text-sm font-semibold text-[#9CA3AF]">{product.category}</span>
               {discPct > 0 && (
                 <>
                   <span className="text-[#D1D5DB]">·</span>
-                  <span className="text-xs font-bold text-[#0D9A55]">Save {discPct}% on MRP</span>
+                  <span className="text-sm font-bold text-[#0D9A55]">Save {discPct}% on MRP</span>
                 </>
               )}
             </div>
@@ -323,11 +407,11 @@ const increaseLocalQty = () => {
             </h1>
 
             {/* Company + composition, said once */}
-            <p className="mt-2 text-base font-bold text-[#0D9A55]">{product.company}</p>
-            <p className="mt-1 text-sm leading-6 text-[#6B7280]">{product.composition}</p>
+            <p className="mt-2 text-xl font-bold text-[#0D9A55]">{product.company}</p>
+            <p className="mt-1 text-base leading-6 text-[#6B7280]">{product.composition}</p>
 
             {/* Price — the single most important number, given room but not a big card */}
-            <div className="mt-5 flex flex-wrap items-baseline gap-2.5 border-t border-black/[0.06] pt-5">
+            <div className="mt-5 flex flex-wrap items-baseline gap-3 border-t border-black/[0.06] pt-5">
               <span className="text-4xl font-extrabold tracking-tight text-[#1C1C1E]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
                 ₹{effectivePrice(product).toLocaleString()}
               </span>
@@ -338,17 +422,27 @@ const increaseLocalQty = () => {
                 <span className="rounded-lg bg-[#E8F5EE] px-2 py-1 text-[10px] font-extrabold text-[#0D9A55]">{discPct}% OFF</span>
               )}
             </div>
-            <p className="mt-1 text-xs text-[#9CA3AF]">Wholesale net rate per pack</p>
+            <p className="mt-4 text-sm text-[#686a6f]">Final effective customer rate</p>
+            {isSameProductOffer && (
+              <p className="mt-4 inline-flex rounded-lg bg-[#E8F5EE] px-2.5 py-1 text-[14px] font-extrabold text-[#0D9A55]">
+                BUY {buyQuantity} GET {freeQuantity} FREE
+              </p>
+            )}
+            {isSameProductOffer && (
+              <p className="mt-4 text-[14px] text-[#4e5157]">
+                Pay for {buyQuantity}, receive {buyQuantity + freeQuantity} total.
+              </p>
+            )}
 
             {/* Pack size + expiry — inline meta, no boxes */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#6B7280]">
-              <span className="flex items-center gap-1.5">
+            <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-1 text-base text-[#6b7079]">
+              <span className="flex items-center gap-2">
                 <span className="text-[#0D9A55]"><PackageIcon /></span>
-                <span className="font-semibold text-[#1C1C1E]">{product.pack}</span>
+                <span className="font-bold text-[#1C1C1E]">{product.pack}</span>
               </span>
               <span className="text-[#D1D5DB]">·</span>
               <span>
-                Expiry <span className="font-semibold text-[#1C1C1E]">{product.expiry}</span>
+                Expiry <span className="font-bold text-[#1C1C1E]">{product.expiry}</span>
               </span>
             </div>
 
@@ -371,10 +465,15 @@ const increaseLocalQty = () => {
                         <CheckIcon />
                       </span>
                       <div>
-                        <p className="text-sm font-extrabold text-[#0D9A55]">In cart</p>
-                        <p className="text-xs text-[#6B7280]">
-                          {cartItem.quantity} unit{cartItem.quantity !== 1 ? "s" : ""} · ₹{(effectivePrice(product) * cartItem.quantity).toLocaleString()}
+                        <p className="text-lg font-extrabold text-[#0D9A55]">In cart</p>
+                        <p className="text-2xl text-[#171818] font-bold mt-2 mb-2">
+                           ₹{calculateLine(product, cartItem.quantity).taxableAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
+                        {calculateLine(product, cartItem.quantity).freeQuantityEarned > 0 && (
+                          <p className="text-[12px] font-semibold text-[#0D9A55]">
+                           {cartItem.quantity} paid unit{cartItem.quantity !== 1 ? "s" : ""} + {calculateLine(product, cartItem.quantity).freeQuantityEarned} free · {calculateLine(product, cartItem.quantity).totalStrips} total
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -384,7 +483,7 @@ const increaseLocalQty = () => {
 onClick={() =>
   updateQty(
     product.id,
-    cartItem.quantity - minQty
+    cartItem.quantity - quantityStep
   )
 }                        className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                       >
@@ -393,20 +492,24 @@ onClick={() =>
                       <span className="w-8 text-center text-sm font-extrabold text-[#1C1C1E]">{cartItem.quantity}</span>
                       <motion.button
                         whileTap={{ scale: 0.85 }}
-                        onClick={() => updateQty(product.id, cartItem.quantity + minQty)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
+                        onClick={() => updateQty(product.id, cartItem.quantity + quantityStep)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl text-xl font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
                       >
                         +
                       </motion.button>
                     </div>
                   </motion.div>
+                ) : stock <= 0 || calculateLine(product, minimumQuantity).totalStrips > stock ? (
+                  <div className="flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm font-bold text-red-600">
+                    {stock <= 0 ? "Out of Stock" : "Insufficient stock for minimum quantity"}
+                  </div>
                 ) : (
                   <motion.div key="add-cart" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-3">
                     <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-black/[0.07] bg-white p-1 shadow-[0_2px_8px_rgba(0,0,0,0.035)]">
                       <motion.button
                         whileTap={{ scale: 0.85 }}
                         onClick={decreaseLocalQty}
-                        className="flex h-10 w-9 items-center justify-center rounded-xl text-xl font-bold text-[#6B7280] transition-colors hover:bg-[#E8F5EE] hover:text-[#0D9A55]"
+                        className="flex h-10 w-9 items-center justify-center rounded-xl text-2xl font-bold text-[#6B7280] transition-colors hover:bg-[#E8F5EE] hover:text-[#0D9A55]"
                       >
                         −
                       </motion.button>
@@ -427,7 +530,7 @@ onClick={() =>
                       className="group flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#0D9A55] px-5 py-3.5 text-sm font-extrabold text-white shadow-[0_7px_22px_rgba(13,154,85,0.28)] transition-all duration-300 hover:bg-[#0A7A43] hover:shadow-[0_10px_30px_rgba(13,154,85,0.35)]"
                     >
                       <CartIcon />
-                      <span>Add to Cart — ₹{(effectivePrice(product) * localQty).toLocaleString()}</span>
+                      <span>Add to Cart — ₹{calculateLine(product, localQty).taxableAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       <svg className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
                       </svg>
@@ -436,10 +539,7 @@ onClick={() =>
                 )}
               </AnimatePresence>
 
-              <button onClick={() => navigate("cart")} className="mt-3 flex w-full items-center justify-center gap-1 text-xs font-bold text-[#6B7280] transition-colors hover:text-[#0D9A55]">
-                View Cart
-                <span>→</span>
-              </button>
+             
             </div>
 
             {/* =============================================
@@ -559,7 +659,7 @@ onClick={() =>
                 <button onClick={() =>
   updateQty(
     product.id,
-    cartItem.quantity + minQty
+    cartItem.quantity + quantityStep
   )
 } className="flex h-7 w-7 items-center justify-center rounded-lg text-lg font-bold text-[#0D9A55]">
                   +
@@ -575,6 +675,10 @@ onClick={() =>
                 Go to Cart · ₹{(effectivePrice(product) * cartItem.quantity).toLocaleString()}
               </motion.button>
             </motion.div>
+          ) : stock <= 0 || calculateLine(product, minimumQuantity).totalStrips > stock ? (
+            <div className="flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
+              {stock <= 0 ? "Out of Stock" : "Insufficient stock for minimum quantity"}
+            </div>
           ) : (
             <motion.div key="mobile-add" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="flex items-center gap-2">
               <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-black/[0.07] bg-[#F5F7F5]">
@@ -593,7 +697,7 @@ onClick={() =>
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0D9A55] py-3 text-xs font-extrabold text-white shadow-[0_5px_15px_rgba(13,154,85,0.25)]"
               >
                 <CartIcon />
-                Add to Cart · ₹{(effectivePrice(product) * localQty).toLocaleString()}
+                Add to Cart · ₹{calculateLine(product, localQty).taxableAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </motion.button>
             </motion.div>
           )}

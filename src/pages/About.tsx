@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useApp } from "../context";
 
 export default function About() {
-  const { navigate } = useApp();
+   const { navigate, isLoggedIn } = useApp();
 
   const stats = [
     {
@@ -787,34 +787,34 @@ export default function About() {
             <div className="flex flex-col justify-center gap-3 sm:flex-row">
 
               {/* Get Started */}
-              <motion.button
-                type="button"
-                onClick={() => navigate("login")}
-                whileHover={{
-                  y: -3,
-                  scale: 1.02,
-                }}
-                whileTap={{
-                  scale: 0.97,
-                }}
-                className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-7 py-3.5 text-sm font-bold text-[#0D9A55] shadow-[0_8px_25px_rgba(0,0,0,0.12)] transition-all duration-300 hover:shadow-[0_12px_30px_rgba(0,0,0,0.16)]"
-              >
-                Get Started
+             <motion.button
+  type="button"
+  onClick={() => navigate(isLoggedIn ? "orders" : "login")}
+  whileHover={{
+    y: -3,
+    scale: 1.02,
+  }}
+  whileTap={{
+    scale: 0.97,
+  }}
+  className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-7 py-3.5 text-sm font-bold text-[#0D9A55] shadow-[0_8px_25px_rgba(0,0,0,0.12)] transition-all duration-300 hover:shadow-[0_12px_30px_rgba(0,0,0,0.16)]"
+>
+  {isLoggedIn ? "My Orders" : "Get Started"}
 
-                <svg
-                  className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 12h14m-6-6 6 6-6 6"
-                  />
-                </svg>
-              </motion.button>
+  <svg
+    className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M5 12h14m-6-6 6 6-6 6"
+    />
+  </svg>
+</motion.button>
 
               {/* Contact */}
               <motion.button

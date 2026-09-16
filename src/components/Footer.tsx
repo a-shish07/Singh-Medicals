@@ -3,7 +3,7 @@ import type { Page } from "../types";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function Footer() {
-  const { navigate } = useApp();
+ const { navigate, isLoggedIn } = useApp();
 
   const link = (label: string, p: Page) => (
     <li key={label}>
@@ -96,9 +96,11 @@ export default function Footer() {
               Account
             </h4>
             <ul className="flex flex-col gap-2">
-              {link("Login / Register", "login")}
+            {isLoggedIn
+  ? link("My Profile", "profile")
+  : link("Login / Register", "login")}
               {link("My Orders", "orders")}
-              {link("My Cart", "cart")}
+              {/* {link("My Cart", "cart")} */}
               {link("Terms & Conditions", "terms")}
               {link("Privacy Policy", "privacy")}
             </ul>

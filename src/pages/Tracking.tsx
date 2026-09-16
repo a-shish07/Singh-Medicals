@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
+import { finalOrderItemPrice } from '../lib/pricing';
 
 const STEPS: OrderStatus[] = ['Submitted', 'Confirmed', 'Packed', 'Dispatched', 'Delivered'];
 
@@ -28,6 +29,7 @@ export default function Tracking() {
   selectedOrderId,
   lookupTrackedOrder,
   customerPhone,
+  products,
 } = useApp();
   const [orderId, setOrderId] = useState('');
   const [phone, setPhone] = useState('');
@@ -87,6 +89,12 @@ export default function Tracking() {
 };
 
   const currentStepIndex = result ? STEPS.indexOf(result.status as OrderStatus) : -1;
+  const orderItemPrice = (item: (typeof orders)[number]['items'][number]) =>
+    finalOrderItemPrice(
+      products.find((product) => product.id === item.productId),
+      Number(item.paidQuantity ?? item.quantity ?? 0),
+      item.rate
+    );
 
   return (
     <div className="min-h-screen max-w-2xl mx-auto px-4 sm:px-6 py-12">
@@ -200,9 +208,9 @@ export default function Tracking() {
                 <div key={item.productId} className="flex justify-between items-center py-2.5 text-sm">
                   <div>
                     <p className="font-medium text-[#1C1C1E]">{item.productName}</p>
-                    <p className="text-xs text-[#9CA3AF]">Qty: {item.quantity} × ₹{item.rate}</p>
+                    <p className="text-xs text-[#9CA3AF]">Qty: {item.quantity} × ₹{orderItemPrice(item)}</p>
                   </div>
-                  <span className="font-bold text-[#1C1C1E]">₹{(item.quantity * item.rate).toLocaleString()}</span>
+                  <span className="font-bold text-[#1C1C1E]">₹{(item.quantity * orderItemPrice(item)).toLocaleString()}</span>
                 </div>
               ))}
               <div className="flex justify-between items-center pt-3 font-bold">

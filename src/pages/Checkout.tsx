@@ -37,8 +37,8 @@ export default function Checkout() {
   const [placingOrder, setPlacingOrder] = useState(false);
 
   const checkout = useMemo(() => calculateCart(products, cartItems), [cartItems, products]);
-  const checkoutTotal = checkout.grandTotal;
-
+  const subtotal = checkout.subtotal;
+const checkoutTotal = checkout.grandTotal;
   // Load the customer's latest profile
   useEffect(() => {
     let cancelled = false;
@@ -444,7 +444,7 @@ export default function Checkout() {
               className="font-bold text-[#1C1C1E] mb-4 flex items-center gap-2"
               style={{ fontFamily: "'DM Sans', sans-serif" }}
             >
-              <span className="w-7 h-7 rounded-full bg-[#0D9A55] text-white text-xs flex items-center justify-center font-bold">
+              <span className="w-7 h-7 rounded-full bg-[#0D9A55] text-white text-sm flex items-center justify-center font-bold">
                 3
               </span>
               Order Summary
@@ -468,17 +468,25 @@ export default function Checkout() {
                     className="flex justify-between items-start gap-3"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[#1C1C1E] text-sm truncate">
+                      <p className="font-semibold text-[#1C1C1E] text-base truncate">
                         {product.name}
                       </p>
 
-                      <p className="text-xs text-[#6B7280] mt-0.5">
-                        {product.pack} × {item.quantity}
+                      <p className="text-sm text-[#6B7280] mt-0.5">
+                        {product.pack} × {item.quantity} paid
+                        {line.freeQuantityEarned + line.bonusStrips > 0
+                          ? line.isSameProductOffer
+                            ? ` + ${line.freeQuantityEarned} free = ${line.totalStrips} total`
+                            : ` + ${line.bonusStrips} bonus free`
+                          : ""}
+                      </p>
+                      <p className="text-[12px] text-[#0D9A55] mt-0.5">
+                        Effective rate: ₹{line.pricePerPaidStrip.toFixed(2)}
                       </p>
                     </div>
 
                     <span className="font-semibold text-sm shrink-0">
-                      ₹{lineTotal.toLocaleString()}
+                      ₹{lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 );
@@ -488,32 +496,32 @@ export default function Checkout() {
             <div className="h-px bg-black/[0.06] mb-3" />
 
             {/* Totals */}
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[#6B7280]">
+            <div className="flex justify-between text-base mb-1">
+              <span className="text-[#404349]">
                 Subtotal
               </span>
 
-              <span className="font-semibold">
-                ₹{checkoutTotal.toLocaleString()}
-              </span>
+             <span className="font-semibold">
+  ₹{subtotal.toFixed(2)}
+</span>
             </div>
 
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[#6B7280]">
+            <div className="flex justify-between text-base mb-1">
+              <span className="text-[#494d54]">
                 GST (5%)
               </span>
 
-              <span className="text-[#6B7280] text-xs">
+              <span className="text-[#121213] text-base ">
                 ₹{checkout.gst.toFixed(2)}
               </span>
             </div>
 
-            <div className="flex justify-between text-sm mb-3">
+            <div className="flex justify-between text-base mb-3">
               <span className="text-[#6B7280]">
                 Freight
               </span>
 
-              <span className="text-[#6B7280] text-xs">
+              <span className="text-[#101010] text-base">
                 {checkout.shipping === 0 ? "FREE" : `₹${checkout.shipping.toFixed(2)}`}
               </span>
             </div>

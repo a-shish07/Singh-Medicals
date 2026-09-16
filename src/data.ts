@@ -1,4 +1,4 @@
-import type { Product, Order } from './types';
+import type { Product, Order } from "./types";
 
 export const PRODUCTS: Product[] = [
   // { id: 'p1', name: 'Augmentin 625 Duo', company: 'GSK', composition: 'Amoxicillin 500mg + Clavulanic Acid 125mg', category: 'Tablets', pack: '10×10', mrp: 280, net: 198, expiry: 'Dec 2025' },
@@ -23,14 +23,14 @@ export const PRODUCTS: Product[] = [
   // { id: 'p20', name: 'Volini Gel', company: 'Ranbaxy', composition: 'Diclofenac 1% + Methyl Salicylate 10%', category: 'Topical', pack: '30g', mrp: 185, net: 130, expiry: 'Apr 2027' },
 ];
 
-export const COMPANIES = [...new Set(PRODUCTS.map(p => p.company))].sort();
+export const COMPANIES = [...new Set(PRODUCTS.map((p) => p.company))].sort();
 
 export const MOCK_ORDERS: Order[] = [
   // {
   //   id: 'ORD-2024-001',
   //   retailerName: 'Rajesh Kumar',
   //   retailerShop: 'Kumar Medical Store',
-  //   retailerPhone: '9876543210',
+  //   retailerPhone: '8174958839',
   //   retailerAddress: 'Shop 12, Gandhi Market, Padrauna, UP 274304',
   //   date: '2024-11-15',
   //   items: [

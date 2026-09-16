@@ -9,6 +9,8 @@ import {
   staggerContainer,
 } from "../lib/motionVariants";
 
+
+
 /* =========================================================
    DATA
 ========================================================= */
@@ -394,7 +396,7 @@ function AccordionItem({ q, a }: { q: string; a: string }) {
 ========================================================= */
 
 export default function Home() {
-  const { navigate, products } = useApp();
+  const { navigate, products,isLoggedIn } = useApp();
   const [homeSearch, setHomeSearch] = useState("");
 
   // Use the same live products collection as Catalogue, so Home always
@@ -404,9 +406,9 @@ export default function Home() {
       .filter((p) => {
         const mrp = Number(p.mrp || 0);
         const net = Number(p.net || 0);
-        return mrp > 0 && (mrp - net) / mrp > 0.25;
+        return mrp > 0 && (mrp - net) / mrp > 0.1;
       })
-      .slice(0, 8);
+      .slice(0, 20);
   }, [products]);
 
   return (
@@ -1610,33 +1612,33 @@ export default function Home() {
             <motion.div
               variants={fadeUp}
               className="flex flex-col justify-center gap-3 sm:flex-row"
-            >
-              <motion.button
-                onClick={() => navigate("login")}
-                whileHover={{
-                  y: -4,
-                  scale: 1.02,
-                }}
-                whileTap={{
-                  scale: 0.97,
-                }}
-                className="group flex items-center justify-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-sm font-bold text-[#0D9A55] shadow-[0_10px_30px_rgba(0,0,0,0.15)] transition-shadow duration-300 hover:shadow-[0_14px_35px_rgba(0,0,0,0.2)]"
-              >
-                Login / Register
-                <svg
-                  className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="m13.5 4.5 7.5 7.5m0 0-7.5 7.5M21 12H3"
-                  />
-                </svg>
-              </motion.button>
+            ><motion.button
+  onClick={() => navigate(isLoggedIn ? "orders" : "login")}
+  whileHover={{
+    y: -4,
+    scale: 1.02,
+  }}
+  whileTap={{
+    scale: 0.97,
+  }}
+  className="group flex items-center justify-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-sm font-bold text-[#0D9A55] shadow-[0_10px_30px_rgba(0,0,0,0.15)] transition-shadow duration-300 hover:shadow-[0_14px_35px_rgba(0,0,0,0.2)]"
+>
+  {isLoggedIn ? "My Orders" : "Login / Register"}
+
+  <svg
+    className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2.5}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="m13.5 4.5 7.5 7.5m0 0-7.5 7.5M21 12H3"
+    />
+  </svg>
+</motion.button>
 
               <motion.button
                 onClick={() => navigate("catalogue")}
@@ -1649,7 +1651,7 @@ export default function Home() {
                 }}
                 className="rounded-2xl border-2 border-white/30 px-8 py-3.5 text-sm font-bold text-white transition-all duration-300 hover:border-white/60 hover:bg-white/10"
               >
-                Browse as Guest
+               {isLoggedIn ? "Catalogue" : "Browse Catalogue as Guest"}
               </motion.button>
             </motion.div>
 

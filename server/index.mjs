@@ -74,19 +74,91 @@ const hasPtrDiscount = (type) => [DiscountType.DISCOUNT_ON_PTR, DiscountType.SAM
 function calculateOrderLine(product, boxes) {
   const strips = stripsPerBox(product.pack);
   if (!strips) throw new Error(`${product.name} has an invalid pack size.`);
+
   const paidBoxes = Math.floor(Number(boxes));
-  if (!Number.isInteger(paidBoxes) || paidBoxes < 1) throw new Error(`Quantity for ${product.name} must be a positive whole number of boxes.`);
+  if (!Number.isInteger(paidBoxes) || paidBoxes < 1) {
+    throw new Error(
+      `Quantity for ${product.name} must be a positive whole number of boxes.`
+    );
+  }
+
   // MRP/PTR and customer quantities are per strip. Pack size only describes
   // physical packing; offers and inventory consumption are strip-based.
   const ptr = Number(product.mrp) * PTR_FACTOR;
-  const pricePerPaidStrip = ptr * (hasPtrDiscount(product.discountType) ? 1 - Number(product.discountValue || 0) / 100 : 1);
+  const ptrAfterDiscount =
+    ptr *
+    (hasPtrDiscount(product.discountType)
+      ? 1 - Number(product.discountValue || 0) / 100
+      : 1);
+
   const paidStrips = paidBoxes;
   const configuredBonus = hasBonus(product.discountType);
-  if (configuredBonus && (!(Number(product.buyQuantity) > 0) || !(Number(product.freeQuantity) > 0))) throw new Error(`${product.name} has an invalid offer configuration.`);
-  const freeStrips = configuredBonus ? Math.floor(paidStrips / Number(product.buyQuantity)) * Number(product.freeQuantity) : 0;
-  const sameProductFree = hasSameProductBonus(product.discountType) ? freeStrips : 0;
-  const taxableAmount = money(pricePerPaidStrip * paidStrips);
-  return { paidBoxes, stripsPerBox: strips, paidStrips, freeStrips: sameProductFree, bonusStrips: hasSameProductBonus(product.discountType) ? 0 : freeStrips, totalStrips: paidStrips + sameProductFree, pricePerPaidBox: money(pricePerPaidStrip * strips), pricePerPaidStrip: money(pricePerPaidStrip), taxableAmount };
+
+  if (
+    configuredBonus &&
+    (!(Number(product.buyQuantity) > 0) ||
+      !(Number(product.freeQuantity) > 0))
+  ) {
+    throw new Error(`${product.name} has an invalid offer configuration.`);
+  }
+
+  const buyQuantity = configuredBonus
+    ? Math.floor(Number(product.buyQuantity))
+    : 0;
+  const freeQuantity = configuredBonus
+    ? Math.floor(Number(product.freeQuantity))
+    : 0;
+
+  const offerBundles =
+    configuredBonus && buyQuantity > 0
+      ? Math.floor(paidStrips / buyQuantity)
+      : 0;
+
+  const freeStrips = configuredBonus
+    ? offerBundles * freeQuantity
+    : 0;
+
+  const sameProductFree = hasSameProductBonus(product.discountType)
+    ? freeStrips
+    : 0;
+
+  const bonusStrips = hasSameProductBonus(product.discountType)
+    ? 0
+    : freeStrips;
+
+  // SAME PRODUCT Buy X Get Y:
+  // Effective customer rate follows the configured offer for the actual
+  // paid quantity: discounted PTR × paid quantity ÷ total quantity.
+  // The customer pays this effective rate only for the paid quantity;
+  // qualifying free units are supplied at ₹0.
+  const effectivePrice = money(
+    hasSameProductBonus(product.discountType) &&
+      paidStrips > 0 &&
+      sameProductFree > 0
+      ? (ptrAfterDiscount * paidStrips) /
+        (paidStrips + sameProductFree)
+      : ptrAfterDiscount
+  );
+
+  const taxableAmount = money(effectivePrice * paidStrips);
+
+  return {
+    paidBoxes,
+    stripsPerBox: strips,
+    paidStrips,
+    freeStrips: sameProductFree,
+    bonusStrips,
+    totalStrips: paidStrips + sameProductFree,
+    pricePerPaidBox: money(effectivePrice * strips),
+    pricePerPaidStrip: money(effectivePrice),
+    effectivePrice: money(effectivePrice),
+    taxableAmount,
+    hasOffer: configuredBonus,
+    isSameProductOffer: hasSameProductBonus(product.discountType),
+    buyQuantity,
+    freeQuantity,
+    freeQuantityEarned: sameProductFree,
+  };
 }
 
 function calculateProductPricing({
@@ -125,8 +197,31 @@ function calculateProductPricing({
     }
 
   }
-  const discountAmount = usesDiscount ? Number((ptr * (parsedDiscount / 100)).toFixed(2)) : 0;
-  const effectivePtr = Math.max(0, Number((ptr - discountAmount).toFixed(2)));
+  const discountAmount = usesDiscount
+    ? Number((ptr * (parsedDiscount / 100)).toFixed(2))
+    : 0;
+
+  const ptrAfterDiscount = Math.max(
+    0,
+    Number((ptr - discountAmount).toFixed(2))
+  );
+
+  // For a same-product Buy X Get Y offer, store the actual effective
+  // customer rate: discounted PTR × X ÷ (X + Y).
+  // Different-product offers keep the paid product's discounted PTR because
+  // the free item is a separate product.
+  const effectivePtr =
+    hasSameProductBonus(discountType) && parsedBuy > 0 && parsedFree > 0
+      ? Math.max(
+          0,
+          Number(
+            (
+              (ptrAfterDiscount * Math.floor(parsedBuy)) /
+              (Math.floor(parsedBuy) + Math.floor(parsedFree))
+            ).toFixed(2)
+          )
+        )
+      : ptrAfterDiscount;
 
   return {
     mrp: Number(parsedMrp.toFixed(2)),
@@ -439,16 +534,34 @@ const sendMail = async (message) => {
   if (error) throw new Error(error.message);
 };
 
-const orderLinesHtml = (order) => (order.items || []).map((item) =>
-  `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeHtml(item.productName)}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">${item.quantity}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">₹${Number(item.unitPrice).toFixed(2)}</td></tr>`
-).join('');
+const orderLinesHtml = (order) =>
+  (order.items || [])
+    .map((item) => {
+      const paid = Number(item.paidQuantity || item.quantity || 0);
+      const free = Number(item.freeQuantity || 0);
+      const total = Number(item.totalQuantity || paid + free);
+
+      return `<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeHtml(item.productName)}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">${paid}${free > 0 ? ` + ${free} free` : ''}${total > 0 ? ` (${total} total)` : ''}</td><td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">₹${Number(item.unitPrice).toFixed(2)}</td></tr>`;
+    })
+    .join('');
 
 const sendOrderEmails = async (order, customer) => {
-  const total = Number(order.subtotal).toFixed(2);
-  const details = `<table style="width:100%;border-collapse:collapse"><thead><tr><th align="left" style="padding:8px">Medicine</th><th style="padding:8px">Qty</th><th align="right" style="padding:8px">Rate</th></tr></thead><tbody>${orderLinesHtml(order)}</tbody></table>`;
+  const total = Number(order.grandTotal).toFixed(2);
+  const details = `<table style="width:100%;border-collapse:collapse"><thead><tr><th align="left" style="padding:8px">Medicine</th><th style="padding:8px">Qty</th><th align="right" style="padding:8px">Effective Rate</th></tr></thead><tbody>${orderLinesHtml(order)}</tbody></table>`;
+
   await Promise.all([
-    sendMail({ to: customer.email, subject: `Order received — ${order.orderNumber}`, html: `<h2>Thank you for your order, ${escapeHtml(order.deliveryName)}.</h2><p>Your order <strong>${escapeHtml(order.orderNumber)}</strong> has been received.</p>${details}<p><strong>Total: ₹${total}</strong></p><p>Delivery: ${escapeHtml(order.deliveryAddress)}</p>` }),
-    adminMail ? sendMail({ to: adminMail, subject: `New order — ${order.orderNumber}`, html: `<h2>New order received</h2><p><strong>${escapeHtml(order.deliveryName)}</strong> from ${escapeHtml(order.deliveryShop)} has placed order <strong>${escapeHtml(order.orderNumber)}</strong>.</p><p>Phone: ${escapeHtml(order.deliveryPhone)}<br>Address: ${escapeHtml(order.deliveryAddress)}</p>${details}<p><strong>Total: ₹${total}</strong></p>` }) : Promise.resolve(),
+    sendMail({
+      to: customer.email,
+      subject: `Order received — ${order.orderNumber}`,
+      html: `<h2>Thank you for your order, ${escapeHtml(order.deliveryName)}.</h2><p>Your order <strong>${escapeHtml(order.orderNumber)}</strong> has been received.</p>${details}<p><strong>Subtotal:</strong> ₹${Number(order.subtotal).toFixed(2)}</p><p><strong>GST:</strong> ₹${Number(order.gstTotal).toFixed(2)}</p><p><strong>Freight:</strong> ${Number(order.shippingTotal) === 0 ? 'FREE' : `₹${Number(order.shippingTotal).toFixed(2)}`}</p><p><strong>Order Value:</strong> ₹${total}</p><p>Delivery: ${escapeHtml(order.deliveryAddress)}</p>`,
+    }),
+    adminMail
+      ? sendMail({
+          to: adminMail,
+          subject: `New order — ${order.orderNumber}`,
+          html: `<h2>New order received</h2><p><strong>${escapeHtml(order.deliveryName)}</strong> from ${escapeHtml(order.deliveryShop)} has placed order <strong>${escapeHtml(order.orderNumber)}</strong>.</p><p>Phone: ${escapeHtml(order.deliveryPhone)}<br>Address: ${escapeHtml(order.deliveryAddress)}</p>${details}<p><strong>Order Value:</strong> ₹${total}</p>`,
+        })
+      : Promise.resolve(),
   ]);
 };
 
@@ -2106,7 +2219,7 @@ app.patch(
                 },
                 data: {
                   stock: {
-                    increment: item.quantity,
+                    increment: Number(item.totalQuantity ?? item.quantity ?? 0),
                   },
                 },
               });

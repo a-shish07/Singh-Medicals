@@ -71,6 +71,11 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   rate: number;
+
+  paidQuantity?: number;
+  freeQuantity?: number;
+  totalQuantity?: number;
+  isFree?: boolean;
 }
 
 export interface Order {

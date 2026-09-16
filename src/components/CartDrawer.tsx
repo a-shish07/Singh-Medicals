@@ -1,4 +1,5 @@
 import { useApp } from "../context";
+import { calculateLine } from "../lib/pricing";
 
 export default function CartDrawer() {
   const {
@@ -10,6 +11,7 @@ export default function CartDrawer() {
     updateQty,
     cartTotal,
     navigate,
+    isLoggedIn,
   } = useApp();
 
   return (
@@ -98,13 +100,16 @@ export default function CartDrawer() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsCartOpen(false)}
-                className="rounded-xl bg-[#0D9A55] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0A7A43]"
-              >
-                Browse Catalogue
-              </button>
+             <button
+  type="button"
+  onClick={() => {
+    setIsCartOpen(false);
+    navigate("catalogue");
+  }}
+  className="rounded-xl bg-[#0D9A55] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0A7A43]"
+>
+  Browse Catalogue
+</button>
             </div>
           ) : (
             /* Cart items */
@@ -117,7 +122,23 @@ const minQty = Math.max(
   1,
   Number(product.minOrderQuantity) || 1
 );
-                const lineTotal = (product.net ?? 0) * item.quantity;
+                const discountType = String(product.discountType || "NONE");
+                const buyQuantity = Math.max(
+                  1,
+                  Math.floor(Number(product.buyQuantity || 0) || 1)
+                );
+                const freeQuantity = Math.max(
+                  0,
+                  Math.floor(Number(product.freeQuantity || 0) || 0)
+                );
+                const isSameProductOffer =
+                  (discountType === "SAME_PRODUCT_BONUS" ||
+                    discountType === "SAME_PRODUCT_BONUS_AND_DISCOUNT") &&
+                  freeQuantity > 0;
+                const quantityStep = isSameProductOffer ? buyQuantity : minQty;
+                const line = calculateLine(product, item.quantity);
+                const freeUnits = line.freeQuantityEarned + line.bonusStrips;
+                const lineTotal = line.taxableAmount;
 
                 return (
                   <div
@@ -193,12 +214,17 @@ const minQty = Math.max(
                         <div className="mt-3 flex items-end justify-between gap-3">
                           <div>
                             <p className="text-sm font-bold text-[#0D9A55]">
-                              ₹{(product.net ?? 0).toLocaleString()}
+                              ₹{line.effectivePrice.toFixed(2)}
                             </p>
 
                             <p className="mt-0.5 text-[11px] text-[#9CA3AF]">
-                              per unit
+                              final PTR per paid unit
                             </p>
+                            {line.hasOffer && (
+                              <p className="mt-1 text-[10px] font-bold text-[#0D9A55]">
+                                BUY {line.buyQuantity} GET {line.freeQuantity} FREE
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-3">
@@ -209,7 +235,7 @@ const minQty = Math.max(
                                onClick={() =>
   updateQty(
     item.productId,
-    Math.max(minQty, item.quantity - minQty)
+    Math.max(Math.max(minQty, quantityStep), item.quantity - quantityStep),
   )
 }
                                 className="flex h-8 w-8 items-center justify-center text-base font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
@@ -227,7 +253,7 @@ const minQty = Math.max(
                                 onClick={() =>
   updateQty(
     item.productId,
-    item.quantity + minQty
+    item.quantity + quantityStep
   )
 }
                                 className="flex h-8 w-8 items-center justify-center text-base font-bold text-[#0D9A55] transition-colors hover:bg-[#E8F5EE]"
@@ -238,9 +264,22 @@ const minQty = Math.max(
                             </div>
 
                             {/* Line total */}
-                            <p className="min-w-[62px] text-right text-sm font-bold text-[#1C1C1E]">
-                              ₹{lineTotal.toLocaleString()}
-                            </p>
+                            <div className="text-right">
+                              <p className="min-w-[62px] text-sm font-bold text-[#1C1C1E]">
+                                ₹{lineTotal.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </p>
+                              {freeUnits > 0 && (
+                                <p className="mt-0.5 text-[10px] font-semibold text-[#0D9A55]">
+                                  {line.paidStrips} paid + {freeUnits} free
+                                  {line.isSameProductOffer
+                                    ? ` = ${line.totalStrips} total`
+                                    : " bonus"}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -274,18 +313,27 @@ const minQty = Math.max(
               <button
                 type="button"
                 onClick={() => {
-                  const msg = `Hi, I want to place a wholesale order.\n\n${cartItems
+                  const whatsappLines = cartItems
                     .map((item) => {
-                      const p = products.find((x) => x.id === item.productId);
+                      const product = products.find((p) => p.id === item.productId);
+                      if (!product) return "";
 
-                      return p
-                        ? `${p.name} × ${item.quantity} — ₹${(
-                            (p.net ?? 0) * item.quantity
-                          ).toLocaleString()}`
+                      const line = calculateLine(product, item.quantity);
+                      const sameProductDeal = line.freeQuantityEarned > 0
+                        ? `\n  Deal: Buy ${line.buyQuantity}, get ${line.freeQuantity} free\n  Quantity: ${line.paidStrips} paid + ${line.freeQuantityEarned} free = ${line.totalStrips} total`
                         : "";
+                      const bonusDeal = line.bonusStrips > 0
+                        ? `\n  Deal: ${line.paidStrips} paid + ${line.bonusStrips} bonus unit(s) free`
+                        : "";
+                      const pendingDeal = line.hasOffer && !sameProductDeal && !bonusDeal
+                        ? `\n  Deal: Buy ${line.buyQuantity}, get ${line.freeQuantity} free (not yet unlocked)`
+                        : "";
+
+                      return `${product.name}\n  Final PTR: ₹${line.effectivePrice.toFixed(2)} × ${line.paidStrips} paid = ₹${line.taxableAmount.toFixed(2)}${sameProductDeal}${bonusDeal}${pendingDeal}`;
                     })
                     .filter(Boolean)
-                    .join("\n")}\n\nTotal: ₹${cartTotal.toLocaleString()}`;
+                    .join("\n\n");
+                  const msg = `Hi, I want to place a wholesale order.\n\n${whatsappLines}\n\nSubtotal (before GST and freight): ₹${cartTotal.toFixed(2)}`;
 
                   window.open(
                     `https://wa.me/918174958839?text=${encodeURIComponent(

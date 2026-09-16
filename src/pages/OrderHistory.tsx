@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
+import { finalOrderItemPrice } from '../lib/pricing';
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
   Submitted: 'bg-amber-100 text-amber-700',
@@ -28,6 +29,7 @@ export default function OrderHistory() {
   isLoggedIn,
   refreshOrders,
   addToast,
+  products,
 } = useApp();
 
   useEffect(() => {
@@ -44,6 +46,12 @@ export default function OrderHistory() {
   }, [isLoggedIn, refreshOrders, addToast]);
 
   const myOrders = isLoggedIn ? orders : [];
+  const orderItemPrice = (item: (typeof orders)[number]['items'][number]) =>
+    finalOrderItemPrice(
+      products.find((product) => product.id === item.productId),
+      Number(item.paidQuantity ?? item.quantity ?? 0),
+      item.rate
+    );
 
   return (
     <div className="min-h-screen bg-[#F7F9F7]">
@@ -228,14 +236,14 @@ export default function OrderHistory() {
                             </p>
 
                             <p className="text-xs text-[#9CA3AF] mt-0.5">
-                              ₹{item.rate.toLocaleString('en-IN')} ×{' '}
+                              ₹{orderItemPrice(item).toLocaleString('en-IN')} ×{' '}
                               {item.quantity}
                             </p>
                           </div>
 
                           <span className="text-sm font-bold text-[#1C1C1E] shrink-0">
                             ₹
-                            {(item.quantity * item.rate).toLocaleString(
+                            {(item.quantity * orderItemPrice(item)).toLocaleString(
                               'en-IN'
                             )}
                           </span>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../context';
 import type { OrderStatus } from '../../types';
 import { STATUS_STYLES, ALL_STATUSES } from './constants';
+import { finalOrderItemPrice } from '../../lib/pricing';
 
 export default function OrdersTab() {
 const {
@@ -9,6 +10,7 @@ const {
   updateOrderStatus,
   sendTrackingEmail,
   addToast,
+  products,
 } = useApp();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
   const [searchQ, setSearchQ] = useState('');
@@ -25,6 +27,12 @@ const {
   });
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
+  const orderItemPrice = (item: (typeof orders)[number]['items'][number]) =>
+    finalOrderItemPrice(
+      products.find((product) => product.id === item.productId),
+      Number(item.paidQuantity ?? item.quantity ?? 0),
+      item.rate
+    );
 
    const updateStatus = async (orderId: string, status: OrderStatus) => {
     try {
@@ -101,23 +109,59 @@ const {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[#6B7280] text-xs uppercase tracking-wide">
-                    <th className="text-left pb-2">Product</th>
-                    <th className="text-right pb-2">Qty</th>
-                    <th className="text-right pb-2">Rate</th>
-                    <th className="text-right pb-2">Total</th>
+                   <th className="text-left pb-2">Product</th>
+<th className="text-right pb-2">Paid Qty</th>
+<th className="text-right pb-2">Free Qty</th>
+<th className="text-right pb-2">Total Qty</th>
+<th className="text-right pb-2">Rate</th>
+<th className="text-right pb-2">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/[0.05]">
-                  {selectedOrder.items.map(item => (
-                    <tr key={item.productId}>
-                      <td className="py-2.5 font-medium">{item.productName}</td>
-                      <td className="py-2.5 text-right text-[#6B7280]">{item.quantity}</td>
-                      <td className="py-2.5 text-right text-[#6B7280]">₹{item.rate}</td>
-                      <td className="py-2.5 text-right font-semibold">₹{(item.rate * item.quantity).toLocaleString()}</td>
-                    </tr>
-                  ))}
+                 {selectedOrder.items.map(item => {
+  const freeQuantity = Number(
+    (item as typeof item & { freeQuantity?: number }).freeQuantity || 0
+  );
+
+  const paidQuantity = Number(item.quantity || 0);
+  const totalQuantity = paidQuantity + freeQuantity;
+
+  return (
+    <tr key={item.productId}>
+      <td className="py-2.5 font-medium">
+        {item.productName}
+      </td>
+
+      <td className="py-2.5 text-right text-[#6B7280]">
+        {paidQuantity}
+      </td>
+
+      <td className="py-2.5 text-right">
+        {freeQuantity > 0 ? (
+          <span className="font-bold text-[#0D9A55]">
+            {freeQuantity}
+          </span>
+        ) : (
+          <span className="text-[#9CA3AF]">—</span>
+        )}
+      </td>
+
+      <td className="py-2.5 text-right text-[#6B7280]">
+        {totalQuantity}
+      </td>
+
+      <td className="py-2.5 text-right text-[#6B7280]">
+        ₹{orderItemPrice(item).toFixed(2)}
+      </td>
+
+      <td className="py-2.5 text-right font-semibold">
+        ₹{(orderItemPrice(item) * item.quantity).toLocaleString()}
+      </td>
+    </tr>
+  );
+})}
                   <tr>
-                    <td colSpan={3} className="pt-3 text-right font-bold">Total</td>
+                    <td colSpan={5} className="pt-3 text-right font-bold">Total</td>
                     <td className="pt-3 text-right font-extrabold text-[#0D9A55] text-base">₹{selectedOrder.total.toLocaleString()}</td>
                   </tr>
                 </tbody>
@@ -136,14 +180,51 @@ const {
                       {item.productName}
                     </p>
                     <p className="text-sm font-extrabold text-[#0D9A55] shrink-0">
-                      ₹{(item.rate * item.quantity).toLocaleString()}
+                      ₹{(orderItemPrice(item) * item.quantity).toLocaleString()}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-4 mt-2 text-xs text-[#6B7280]">
-                    <span>Qty: <strong className="text-[#1C1C1E]">{item.quantity}</strong></span>
-                    <span>Rate: <strong className="text-[#1C1C1E]">₹{item.rate}</strong></span>
-                  </div>
+                  {(() => {
+  const freeQuantity = Number(
+    (item as typeof item & { freeQuantity?: number }).freeQuantity || 0
+  );
+
+  const paidQuantity = Number(item.quantity || 0);
+  const totalQuantity = paidQuantity + freeQuantity;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-[#6B7280]">
+      <span>
+        Paid:{" "}
+        <strong className="text-[#1C1C1E]">
+          {paidQuantity}
+        </strong>
+      </span>
+
+      {freeQuantity > 0 && (
+        <span className="font-semibold text-[#0D9A55]">
+          Free: {freeQuantity}
+        </span>
+      )}
+
+      {freeQuantity > 0 && (
+        <span>
+          Total:{" "}
+          <strong className="text-[#1C1C1E]">
+            {totalQuantity}
+          </strong>
+        </span>
+      )}
+
+      <span>
+        Rate:{" "}
+        <strong className="text-[#1C1C1E]">
+          ₹{orderItemPrice(item).toFixed(2)}
+        </strong>
+      </span>
+    </div>
+  );
+})()}
                 </div>
               ))}
 

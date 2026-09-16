@@ -152,12 +152,34 @@ function orderFromApi(order: any): Order {
       ? String(order.createdAt).slice(0, 10)
       : order.date,
 
-    items: (order.items || []).map((item: any) => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: Number(item.quantity || 0),
-      rate: Number(item.unitPrice ?? item.rate ?? 0),
-    })),
+   items: (order.items || []).map((item: any) => ({
+  productId: item.productId,
+  productName: item.productName,
+
+  // Paid quantity
+  quantity: Number(item.quantity ?? item.paidQuantity ?? 0),
+
+  // Price charged per paid unit
+  rate: Number(item.unitPrice ?? item.rate ?? 0),
+
+  // Offer quantities
+  paidQuantity: Number(
+    item.paidQuantity ?? item.quantity ?? 0
+  ),
+
+  freeQuantity: Number(
+    item.freeQuantity ?? 0
+  ),
+
+  totalQuantity: Number(
+    item.totalQuantity ??
+      Number(item.paidQuantity ?? item.quantity ?? 0) +
+      Number(item.freeQuantity ?? 0)
+  ),
+
+  // Used for a separate free bonus-product line
+  isFree: Boolean(item.isFree),
+})),
 
     total: Number(order.grandTotal ?? order.subtotal ?? order.total ?? 0),
 
