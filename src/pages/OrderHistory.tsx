@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
-import { finalOrderItemPrice } from '../lib/pricing';
+import { calculateOrderTotals, finalOrderItemPrice } from '../lib/pricing';
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
   Submitted: 'bg-amber-100 text-amber-700',
@@ -52,6 +52,15 @@ export default function OrderHistory() {
       Number(item.paidQuantity ?? item.quantity ?? 0),
       item.rate
     );
+  const orderItemTotalQuantity = (item: (typeof orders)[number]['items'][number]) =>
+    Number(item.totalQuantity ?? (item.paidQuantity ?? item.quantity ?? 0) + (item.freeQuantity ?? 0));
+  const orderValue = (order: (typeof orders)[number]) =>
+    calculateOrderTotals(
+      order.items.reduce(
+        (sum, item) => sum + orderItemPrice(item) * orderItemTotalQuantity(item),
+        0
+      )
+    ).grandTotal;
 
   return (
     <div className="min-h-screen bg-[#F7F9F7]">
@@ -166,7 +175,7 @@ export default function OrderHistory() {
                         className="text-xl sm:text-2xl font-extrabold text-[#1C1C1E]"
                         style={{ fontFamily: "'DM Sans', sans-serif" }}
                       >
-                        ₹{order.total.toLocaleString('en-IN')}
+                        ₹{orderValue(order).toLocaleString('en-IN')}
                       </p>
                     </div>
                   </div>
@@ -237,13 +246,13 @@ export default function OrderHistory() {
 
                             <p className="text-xs text-[#9CA3AF] mt-0.5">
                               ₹{orderItemPrice(item).toLocaleString('en-IN')} ×{' '}
-                              {item.quantity}
+                              {orderItemTotalQuantity(item)}
                             </p>
                           </div>
 
                           <span className="text-sm font-bold text-[#1C1C1E] shrink-0">
                             ₹
-                            {(item.quantity * orderItemPrice(item)).toLocaleString(
+                            {(orderItemTotalQuantity(item) * orderItemPrice(item)).toLocaleString(
                               'en-IN'
                             )}
                           </span>

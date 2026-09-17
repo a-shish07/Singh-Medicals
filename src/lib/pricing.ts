@@ -89,7 +89,7 @@ export function calculateLine(product: Product, boxes: number) {
   /*
    * For a same-product Buy X Get Y offer:
    *   effective customer rate = PTR × X ÷ (X + Y)
-   * The customer pays only for the paid quantity.
+   * The final effective rate is applied to the full received quantity.
    *
    * For quantities beyond a complete offer bundle, any remainder is charged
    * at the normal discounted PTR rather than receiving a partial offer.
@@ -103,7 +103,7 @@ export function calculateLine(product: Product, boxes: number) {
       : money(ptrAfterDiscount);
 
   const taxableAmount = money(
-    offerEffectivePrice * paidStrips
+    offerEffectivePrice * (paidStrips + sameProductFreeStrips)
   );
 
   return {
@@ -135,9 +135,28 @@ export function finalOrderItemPrice(
   savedRate: number
 ) {
   const quantity = Math.floor(Number(paidQuantity) || 0);
+  const storedRate = Number(savedRate);
+
+  if (Number.isFinite(storedRate) && storedRate > 0) {
+    return money(storedRate);
+  }
+
   return product && quantity > 0
     ? calculateLine(product, quantity).effectivePrice
-    : money(Number(savedRate) || 0);
+    : 0;
+}
+
+export function calculateOrderTotals(subtotalAmount: number) {
+  const subtotal = money(subtotalAmount);
+  const gst = money((subtotal * GST_RATE) / 100);
+  const shipping = subtotal > FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
+
+  return {
+    subtotal,
+    gst,
+    shipping,
+    grandTotal: money(subtotal + gst + shipping),
+  };
 }
 
 export function calculateCart(
@@ -151,18 +170,12 @@ export function calculateCart(
       : [];
   });
 
-  const subtotal = money(
+  const totals = calculateOrderTotals(
     lines.reduce((sum, line) => sum + line.taxableAmount, 0)
   );
-  const gst = money((subtotal * GST_RATE) / 100);
-  const shipping =
-    subtotal > FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
 
   return {
     lines,
-    subtotal,
-    gst,
-    shipping,
-    grandTotal: money(subtotal + gst + shipping),
+    ...totals,
   };
 }

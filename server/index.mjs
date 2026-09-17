@@ -129,8 +129,7 @@ function calculateOrderLine(product, boxes) {
   // SAME PRODUCT Buy X Get Y:
   // Effective customer rate follows the configured offer for the actual
   // paid quantity: discounted PTR × paid quantity ÷ total quantity.
-  // The customer pays this effective rate only for the paid quantity;
-  // qualifying free units are supplied at ₹0.
+  // The final effective rate applies to every received same-product unit.
   const effectivePrice = money(
     hasSameProductBonus(product.discountType) &&
       paidStrips > 0 &&
@@ -140,7 +139,7 @@ function calculateOrderLine(product, boxes) {
       : ptrAfterDiscount
   );
 
-  const taxableAmount = money(effectivePrice * paidStrips);
+  const taxableAmount = money(effectivePrice * (paidStrips + sameProductFree));
 
   return {
     paidBoxes,

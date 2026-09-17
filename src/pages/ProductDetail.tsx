@@ -672,7 +672,7 @@ onClick={() =>
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0D9A55] py-3 text-xs font-extrabold text-white shadow-[0_5px_15px_rgba(13,154,85,0.25)]"
               >
                 <CartIcon />
-                Go to Cart · ₹{(effectivePrice(product) * cartItem.quantity).toLocaleString()}
+                Go to Cart · ₹{calculateLine(product, cartItem.quantity).taxableAmount.toLocaleString()}
               </motion.button>
             </motion.div>
           ) : stock <= 0 || calculateLine(product, minimumQuantity).totalStrips > stock ? (

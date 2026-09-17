@@ -329,7 +329,7 @@ const minQty = Math.max(
                         ? `\n  Deal: Buy ${line.buyQuantity}, get ${line.freeQuantity} free (not yet unlocked)`
                         : "";
 
-                      return `${product.name}\n  Final PTR: ₹${line.effectivePrice.toFixed(2)} × ${line.paidStrips} paid = ₹${line.taxableAmount.toFixed(2)}${sameProductDeal}${bonusDeal}${pendingDeal}`;
+                      return `${product.name}\n  Final PTR: ₹${line.effectivePrice.toFixed(2)} × ${line.totalStrips} total = ₹${line.taxableAmount.toFixed(2)}${sameProductDeal}${bonusDeal}${pendingDeal}`;
                     })
                     .filter(Boolean)
                     .join("\n\n");

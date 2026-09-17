@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
-import { finalOrderItemPrice } from '../lib/pricing';
+import { calculateOrderTotals, finalOrderItemPrice } from '../lib/pricing';
 
 const STEPS: OrderStatus[] = ['Submitted', 'Confirmed', 'Packed', 'Dispatched', 'Delivered'];
 
@@ -95,6 +95,15 @@ export default function Tracking() {
       Number(item.paidQuantity ?? item.quantity ?? 0),
       item.rate
     );
+  const orderItemTotalQuantity = (item: (typeof orders)[number]['items'][number]) =>
+    Number(item.totalQuantity ?? (item.paidQuantity ?? item.quantity ?? 0) + (item.freeQuantity ?? 0));
+  const orderValue = (order: (typeof orders)[number]) =>
+    calculateOrderTotals(
+      order.items.reduce(
+        (sum, item) => sum + orderItemPrice(item) * orderItemTotalQuantity(item),
+        0
+      )
+    ).grandTotal;
 
   return (
     <div className="min-h-screen max-w-2xl mx-auto px-4 sm:px-6 py-12">
@@ -208,14 +217,14 @@ export default function Tracking() {
                 <div key={item.productId} className="flex justify-between items-center py-2.5 text-sm">
                   <div>
                     <p className="font-medium text-[#1C1C1E]">{item.productName}</p>
-                    <p className="text-xs text-[#9CA3AF]">Qty: {item.quantity} × ₹{orderItemPrice(item)}</p>
+                    <p className="text-xs text-[#9CA3AF]">Qty: {orderItemTotalQuantity(item)} × ₹{orderItemPrice(item)}</p>
                   </div>
-                  <span className="font-bold text-[#1C1C1E]">₹{(item.quantity * orderItemPrice(item)).toLocaleString()}</span>
+                  <span className="font-bold text-[#1C1C1E]">₹{(orderItemTotalQuantity(item) * orderItemPrice(item)).toLocaleString()}</span>
                 </div>
               ))}
               <div className="flex justify-between items-center pt-3 font-bold">
                 <span className="text-[#1C1C1E]">Order Total</span>
-                <span className="text-lg text-[#0D9A55]">₹{result.total.toLocaleString()}</span>
+                <span className="text-lg text-[#0D9A55]">₹{orderValue(result).toLocaleString()}</span>
               </div>
             </div>
           </div>

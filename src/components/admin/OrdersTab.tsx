@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../context';
 import type { OrderStatus } from '../../types';
 import { STATUS_STYLES, ALL_STATUSES } from './constants';
-import { finalOrderItemPrice } from '../../lib/pricing';
+import { calculateOrderTotals, finalOrderItemPrice } from '../../lib/pricing';
 
 export default function OrdersTab() {
 const {
@@ -33,6 +33,15 @@ const {
       Number(item.paidQuantity ?? item.quantity ?? 0),
       item.rate
     );
+  const orderItemTotalQuantity = (item: (typeof orders)[number]['items'][number]) =>
+    Number(item.totalQuantity ?? (item.paidQuantity ?? item.quantity ?? 0) + (item.freeQuantity ?? 0));
+  const orderValue = (order: (typeof orders)[number]) =>
+    calculateOrderTotals(
+      order.items.reduce(
+        (sum, item) => sum + orderItemPrice(item) * orderItemTotalQuantity(item),
+        0
+      )
+    ).grandTotal;
 
    const updateStatus = async (orderId: string, status: OrderStatus) => {
     try {
@@ -124,7 +133,7 @@ const {
   );
 
   const paidQuantity = Number(item.quantity || 0);
-  const totalQuantity = paidQuantity + freeQuantity;
+  const totalQuantity = orderItemTotalQuantity(item);
 
   return (
     <tr key={item.productId}>
@@ -155,14 +164,14 @@ const {
       </td>
 
       <td className="py-2.5 text-right font-semibold">
-        ₹{(orderItemPrice(item) * item.quantity).toLocaleString()}
+        ₹{(orderItemPrice(item) * totalQuantity).toLocaleString()}
       </td>
     </tr>
   );
 })}
                   <tr>
                     <td colSpan={5} className="pt-3 text-right font-bold">Total</td>
-                    <td className="pt-3 text-right font-extrabold text-[#0D9A55] text-base">₹{selectedOrder.total.toLocaleString()}</td>
+                    <td className="pt-3 text-right font-extrabold text-[#0D9A55] text-base">₹{orderValue(selectedOrder).toLocaleString()}</td>
                   </tr>
                 </tbody>
               </table>
@@ -180,7 +189,7 @@ const {
                       {item.productName}
                     </p>
                     <p className="text-sm font-extrabold text-[#0D9A55] shrink-0">
-                      ₹{(orderItemPrice(item) * item.quantity).toLocaleString()}
+                      ₹{(orderItemPrice(item) * orderItemTotalQuantity(item)).toLocaleString()}
                     </p>
                   </div>
 
@@ -190,7 +199,7 @@ const {
   );
 
   const paidQuantity = Number(item.quantity || 0);
-  const totalQuantity = paidQuantity + freeQuantity;
+  const totalQuantity = orderItemTotalQuantity(item);
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-[#6B7280]">
@@ -231,7 +240,7 @@ const {
               <div className="flex items-center justify-between pt-3 border-t border-black/[0.06]">
                 <span className="text-sm font-bold text-[#1C1C1E]">Total</span>
                 <span className="text-lg font-extrabold text-[#0D9A55]">
-                  ₹{selectedOrder.total.toLocaleString()}
+                  ₹{orderValue(selectedOrder).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -374,7 +383,7 @@ const {
                     {new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   </td>
                   <td className="px-4 py-3 text-right text-[#6B7280]">{order.items.length}</td>
-                  <td className="px-4 py-3 text-right font-bold text-[#1C1C1E]">₹{order.total.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-[#1C1C1E]">₹{orderValue(order).toLocaleString()}</td>
                   <td className="px-4 py-3">
                     <select
                       value={order.status}
@@ -449,7 +458,7 @@ const {
               <div className="text-right">
                 <p className="text-[10px] uppercase tracking-wide text-[#9CA3AF]">Total</p>
                 <p className="text-sm font-extrabold text-[#0D9A55] mt-0.5">
-                  ₹{order.total.toLocaleString()}
+                  ₹{orderValue(order).toLocaleString()}
                 </p>
               </div>
             </div>

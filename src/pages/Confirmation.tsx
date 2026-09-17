@@ -1,5 +1,5 @@
 import { useApp } from '../context';
-import { finalOrderItemPrice } from '../lib/pricing';
+import { calculateOrderTotals, finalOrderItemPrice } from '../lib/pricing';
 
 type OrderItemWithOffer = {
   productId: string;
@@ -15,6 +15,19 @@ type OrderItemWithOffer = {
 
 export default function Confirmation() {
   const { confirmedOrderId, navigate, orders, products } = useApp();
+  const orderItemTotalQuantity = (item: OrderItemWithOffer) =>
+    Number(item.totalQuantity ?? (item.paidQuantity ?? item.quantity ?? 0) + (item.freeQuantity ?? 0));
+  const orderValue = (items: OrderItemWithOffer[]) =>
+    calculateOrderTotals(
+      items.reduce(
+        (sum, item) => sum + finalOrderItemPrice(
+          products.find((product) => product.id === item.productId),
+          Number(item.paidQuantity ?? item.quantity ?? 0),
+          item.rate
+        ) * orderItemTotalQuantity(item),
+        0
+      )
+    ).grandTotal;
 
   const order = orders.find(
     (o) => o.id === confirmedOrderId
@@ -163,7 +176,7 @@ export default function Confirmation() {
                       );
 
                       const chargedAmount =
-                        effectivePtr * paidQuantity;
+                        effectivePtr * totalQuantity;
 
                       return (
                         <div
@@ -276,7 +289,7 @@ export default function Confirmation() {
 
                     <span className="text-[#0D9A55] text-lg">
                       ₹
-                      {Number(order.total || 0).toLocaleString(
+                      {orderValue(order.items as OrderItemWithOffer[]).toLocaleString(
                         'en-IN',
                         {
                           minimumFractionDigits: 2,

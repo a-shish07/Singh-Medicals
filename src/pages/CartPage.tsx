@@ -629,16 +629,10 @@ function ProductCard({
     cartPaidQuantity +
     cartFreeQuantity;
 
-  /*
-   * Amount charged.
-   *
-   * IMPORTANT:
-   * Only paid quantity is charged.
-   * Free quantity is never charged.
-   */
+  /* Product value uses the final effective price for every received unit. */
   const cartAmount =
     price *
-    cartPaidQuantity;
+    cartTotalQuantity;
 
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col overflow-hidden group">
