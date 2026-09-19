@@ -91,6 +91,10 @@ export interface Order {
   paymentMethod: 'COD';
   deliveryPartner?: string | null;
   trackingId?: string | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
+  invoiceFileName?: string | null;
+  invoiceUploadedAt?: string | null;
 }
 
 export interface ToastMsg {

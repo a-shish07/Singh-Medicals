@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useApp } from '../../context';
 import type { Product } from '../../types';
 import { Plus, X } from "lucide-react";
-import { loadAdminProducts } from '../../lib/api';
+import { loadAdminProducts, loadAdminProductOptions } from '../../lib/api';
+import { uploadProductImages } from '../../lib/api';
 
 function parseProductImages(image?: string) {
   if (!image) return [];
@@ -112,6 +113,7 @@ export default function ProductsTab() {
     lowStock: 0,
   });
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const adminProducts = products as AdminProduct[];
   const PAGE_SIZE = 50;
@@ -119,6 +121,11 @@ export default function ProductsTab() {
   useEffect(() => {
     setPage(1);
   }, [search, categoryFilter, offerFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (!adminToken) return;
@@ -129,7 +136,7 @@ export default function ProductsTab() {
     loadAdminProducts(adminToken, {
       page,
       limit: PAGE_SIZE,
-      q: search,
+      q: debouncedSearch,
       category: categoryFilter,
       offer: offerFilter,
       sortKey,
@@ -141,7 +148,6 @@ export default function ProductsTab() {
         setTotalProducts(response.pagination.total);
         setTotalPages(Math.max(1, response.pagination.totalPages));
         setCategories(['All', ...response.categories.filter(Boolean)]);
-        setProductOptions(response.productOptions);
         setStats(response.stats);
       })
       .catch((error) => {
@@ -161,7 +167,12 @@ export default function ProductsTab() {
     return () => {
       cancelled = true;
     };
-  }, [adminToken, page, search, categoryFilter, offerFilter, sortKey, sortDir, addToast, setProducts]);
+  }, [adminToken, page, debouncedSearch, categoryFilter, offerFilter, sortKey, sortDir, addToast, setProducts]);
+
+  useEffect(() => {
+    if (!adminToken || (!adding && !editing) || productOptions.length) return;
+    void loadAdminProductOptions(adminToken).then((response) => setProductOptions(response.productOptions)).catch(() => addToast('Could not load bonus product options.', 'error'));
+  }, [adminToken, adding, editing, productOptions.length, addToast]);
 
   const calculatePreview = (source: ProductForm) => {
     const mrp = Number(source.mrp) || 0;
@@ -274,15 +285,10 @@ export default function ProductsTab() {
     }
 
     try {
-      const encodedImages = await Promise.all(files.map(file => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('Image could not be read'));
-        reader.readAsDataURL(file);
-      })));
-      setField('image', JSON.stringify([...currentImages, ...encodedImages]));
-    } catch {
-      addToast('One or more medicine images could not be read.', 'error');
+      const { urls } = await uploadProductImages(adminToken, files);
+      setField('image', JSON.stringify([...currentImages, ...urls]));
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'One or more medicine images could not be uploaded.', 'error');
     }
   };
 

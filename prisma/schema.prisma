@@ -146,6 +146,12 @@ model Order {
   cancelledAt     DateTime?
   deliveryPartner String?
   trackingId      String?
+  cancellationReason String?
+  invoiceFileName String?
+  invoiceMimeType String?
+  invoiceData     Bytes?
+  invoiceUrl      String?
+  invoiceUploadedAt DateTime?
 
   @@index([userId, createdAt])
 }

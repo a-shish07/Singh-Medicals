@@ -1,39 +1,49 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context';
 import { STATUS_STYLES } from './constants';
+import { loadCustomers, loadCustomerOrderHistory } from '../../lib/api';
+import type { Order } from '../../types';
 
 export default function CustomersTab() {
-  const { customers, orders, refreshCustomers } = useApp();
+  const { customers, adminToken, setCustomers } = useApp();
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [customerOrders, setCustomerOrders] = useState<Order[]>([]);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const customerRequestId = useRef(0);
+  const historyRequestId = useRef(0);
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search), 300); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  const loadPage = async () => {
+    if (!adminToken) return;
+    const requestId = ++customerRequestId.current;
+    const response = await loadCustomers(adminToken, { page, limit: 50, q: debouncedSearch });
+    if (requestId !== customerRequestId.current) return;
+    setCustomers(response.customers); setTotal(response.pagination.total); setTotalPages(Math.max(1, response.pagination.totalPages));
+  };
+  useEffect(() => { void loadPage(); }, [adminToken, page, debouncedSearch]);
+  useEffect(() => {
+    if (!adminToken || !selectedCustomerId) { setCustomerOrders([]); return; }
+    const requestId = ++historyRequestId.current;
+    void loadCustomerOrderHistory(adminToken, selectedCustomerId, historyPage).then((response) => { if (requestId === historyRequestId.current) { setCustomerOrders(response.orders); setCustomerTotal(response.totalValue); setHistoryTotalPages(Math.max(1, response.pagination.totalPages)); } });
+  }, [adminToken, selectedCustomerId, historyPage]);
   
 
-  const visible = customers.filter(c =>
-    `${c.name} ${c.email} ${c.phone || ''} ${c.shopName || ''} ${c.gstNumber || ''} ${c.drugLicence20B || ''}`
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const visible = customers;
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId) || null;
-
-  const customerOrders = selectedCustomer
-    ? orders
-        .filter(o => {
-          const samePhone = selectedCustomer.phone && o.retailerPhone === selectedCustomer.phone;
-          const sameShop = selectedCustomer.shopName && o.retailerShop === selectedCustomer.shopName;
-          const sameName = selectedCustomer.name && o.retailerName === selectedCustomer.name;
-          return Boolean(samePhone || sameShop || sameName);
-        })
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    : [];
-
-  const customerTotal = customerOrders.reduce((sum, o) => sum + o.total, 0);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refreshCustomers();
+      await loadPage();
     } finally {
       setRefreshing(false);
     }
@@ -80,7 +90,7 @@ export default function CustomersTab() {
             </div>
             <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-4">
               <div className="rounded-xl bg-[#F5F7F5] px-4 py-3 text-center min-w-[90px]">
-                <p className="text-lg font-extrabold text-[#0D9A55]">{customerOrders.length || selectedCustomer.orderCount || 0}</p>
+                <p className="text-lg font-extrabold text-[#0D9A55]">{selectedCustomer.orderCount || 0}</p>
                 <p className="text-[10px] text-[#6B7280] font-semibold">Orders</p>
               </div>
               <div className="rounded-xl bg-[#F5F7F5] px-4 py-3 text-center min-w-[110px]">
@@ -205,6 +215,7 @@ export default function CustomersTab() {
           ) : (
             <div className="p-10 text-center text-sm text-[#6B7280]">No matching orders found for this customer.</div>
           )}
+          {historyTotalPages > 1 && <div className="flex justify-end gap-2 border-t border-black/[.06] p-3 text-sm"><button onClick={() => setHistoryPage(value => Math.max(1, value - 1))} disabled={historyPage === 1} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Previous</button><span className="px-2 py-1.5">{historyPage} / {historyTotalPages}</span><button onClick={() => setHistoryPage(value => Math.min(historyTotalPages, value + 1))} disabled={historyPage === historyTotalPages} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Next</button></div>}
         </div>
       </div>
     );
@@ -244,7 +255,7 @@ export default function CustomersTab() {
               <div className="rounded-xl bg-[#F7F8F7] px-3 py-2.5 min-w-0"><p className="text-[10px] uppercase tracking-wide text-[#9CA3AF] font-bold">Phone</p><p className="text-sm font-semibold text-[#374151] truncate mt-0.5">{c.phone || '—'}</p></div>
             </div>
             {(c.gstNumber || c.drugLicence20B || c.drugLicence21B) && <div className="flex flex-wrap gap-2 mt-3">{c.gstNumber && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">GST: {c.gstNumber}</span>}{c.drugLicence20B && c.drugLicence21B && <span className="max-w-full truncate px-2.5 py-1.5 rounded-lg bg-[#F5F7F5] text-[11px] font-semibold text-[#6B7280]">DL: {c.drugLicence20B} / {c.drugLicence21B}</span>}</div>}
-            <button onClick={() => setSelectedCustomerId(c.id)} className="w-full mt-3 py-2.5 rounded-xl bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2] transition-colors">View Full Details →</button>
+            <button onClick={() => { setHistoryPage(1); setSelectedCustomerId(c.id); }} className="w-full mt-3 py-2.5 rounded-xl bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2] transition-colors">View Full Details →</button>
           </div>
         ))}
         {visible.length === 0 && <div className="bg-white rounded-2xl p-10 text-center text-sm text-[#6B7280] shadow-[0_2px_16px_rgba(0,0,0,.06)]">No customers found</div>}
@@ -256,13 +267,13 @@ export default function CustomersTab() {
           <table className="w-full text-sm">
             <thead className="bg-[#F5F7F5] text-xs text-[#6B7280]"><tr><th className="text-left p-4">Customer</th><th className="text-left p-4">Shop</th><th className="text-left p-4">Phone</th><th className="text-right p-4">Orders</th><th className="text-right p-4">Action</th></tr></thead>
             <tbody className="divide-y divide-black/[.05]">
-              {visible.map(c => <tr key={c.id} className="hover:bg-[#FAFBFA] transition-colors"><td className="p-4 font-semibold">{c.name}<p className="font-normal text-xs text-[#6B7280] mt-0.5">{c.email}</p></td><td className="p-4">{c.shopName || '—'}</td><td className="p-4">{c.phone || '—'}</td><td className="p-4 text-right text-[#0D9A55] font-bold">{c.orderCount}</td><td className="p-4 text-right"><button onClick={() => setSelectedCustomerId(c.id)} className="px-3 py-2 rounded-lg bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2]">View Details</button></td></tr>)}
+              {visible.map(c => <tr key={c.id} className="hover:bg-[#FAFBFA] transition-colors"><td className="p-4 font-semibold">{c.name}<p className="font-normal text-xs text-[#6B7280] mt-0.5">{c.email}</p></td><td className="p-4">{c.shopName || '—'}</td><td className="p-4">{c.phone || '—'}</td><td className="p-4 text-right text-[#0D9A55] font-bold">{c.orderCount}</td><td className="p-4 text-right"><button onClick={() => { setHistoryPage(1); setSelectedCustomerId(c.id); }} className="px-3 py-2 rounded-lg bg-[#E8F5EE] text-[#0D9A55] text-xs font-bold hover:bg-[#D8F0E2]">View Details</button></td></tr>)}
               {visible.length === 0 && <tr><td colSpan={5} className="p-10 text-center text-[#6B7280]">No customers found</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
-      <div className="mt-3 text-xs text-[#9CA3AF] text-center sm:text-left">Showing {visible.length} of {customers.length} customers</div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#9CA3AF]"><span>Showing {visible.length} of {total} customers</span><div className="flex gap-2"><button onClick={() => setPage(value => Math.max(1, value - 1))} disabled={page === 1} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Previous</button><span className="px-2 py-1.5">{page} / {totalPages}</span><button onClick={() => setPage(value => Math.min(totalPages, value + 1))} disabled={page === totalPages} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Next</button></div></div>
     </div>
   );
 }

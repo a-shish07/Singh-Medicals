@@ -22,6 +22,19 @@ const STATUS_LABELS: Record<string, OrderStatus> = {
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
 };
+const inFlightProductRequests = new Map<string, Promise<any>>();
+const inFlightAdminRequests = new Map<string, Promise<any>>();
+
+function adminGet<T>(token: string, path: string): Promise<T> {
+  const key = `${token}:${path}`;
+  let pending = inFlightAdminRequests.get(key);
+  if (!pending) {
+    pending = request<T>(path, { headers: { Authorization: `Bearer ${token}` } });
+    inFlightAdminRequests.set(key, pending);
+    void pending.then(() => inFlightAdminRequests.delete(key), () => inFlightAdminRequests.delete(key));
+  }
+  return pending as Promise<T>;
+}
 
 /* =========================================================
    API MAPPERS
@@ -190,6 +203,10 @@ function orderFromApi(order: any): Order {
       order.paymentMethod || "COD",
     deliveryPartner: order.deliveryPartner || null,
     trackingId: order.trackingId || null,
+    cancellationReason: order.cancellationReason || null,
+    cancelledAt: order.cancelledAt || null,
+    invoiceFileName: order.invoiceFileName || null,
+    invoiceUploadedAt: order.invoiceUploadedAt || null,
   };
 }
 
@@ -270,11 +287,17 @@ export async function loadProducts(params: {
   if (params.category && params.category !== "All") query.set("category", params.category);
   if (params.company && params.company !== "All") query.set("company", params.company);
 
-  const response = await request<{
-    products: any[];
-    companies: string[];
-    pagination: ProductPagination;
-  }>(`/api/products?${query.toString()}`);
+  const path = `/api/products?${query.toString()}`;
+  let pending = inFlightProductRequests.get(path);
+  if (!pending) {
+    pending = request<{ products: any[]; companies: string[]; pagination: ProductPagination }>(path);
+    inFlightProductRequests.set(path, pending);
+    void pending.then(
+      () => inFlightProductRequests.delete(path),
+      () => inFlightProductRequests.delete(path)
+    );
+  }
+  const response = await pending;
 
   return {
     products: response.products.map(productFromApi),
@@ -601,25 +624,85 @@ export async function loadCustomerOrders(
   };
 }
 
+export async function cancelCustomerOrder(token: string, orderId: string, reason?: string) {
+  const response = await request<any>(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason }),
+  });
+  return { order: orderFromApi(response) };
+}
+
+export async function uploadOrderInvoice(token: string, orderId: string, file: File) {
+  const formData = new FormData();
+  formData.append("invoice", file);
+  const response = await fetch(`${API_BASE}/api/admin/orders/${encodeURIComponent(orderId)}/invoice`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || response.statusText || "Could not upload invoice");
+  return { order: orderFromApi(payload) };
+}
+
+async function uploadFiles(token: string, path: string, files: File[], fieldName: string) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append(fieldName, file));
+  const response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Upload failed.');
+  return payload;
+}
+
+export async function uploadProductImages(token: string, files: File[]) {
+  return uploadFiles(token, '/api/admin/uploads/product-images', files, 'files') as Promise<{ urls: string[] }>;
+}
+
+export async function uploadProfileImage(token: string, file: File) {
+  return uploadFiles(token, '/api/uploads/profile-image', [file], 'file') as Promise<{ url: string }>;
+}
+
+export async function downloadOrderInvoice(token: string, orderId: string) {
+  const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/invoice`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || "Could not download invoice");
+  }
+  const blob = await response.blob();
+  const name = response.headers.get("X-Invoice-Filename") || "invoice";
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url);
+}
+
 /* =========================================================
    ADMIN ORDERS
 ========================================================= */
 
 export async function loadAdminOrders(
-  token: string
+  token: string,
+  params: { page?: number; limit?: number; q?: string; status?: OrderStatus | 'All' } = {}
 ) {
-  const response = await request<any[]>(
-    "/api/admin/orders",
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
+  const query = new URLSearchParams({ page: String(params.page || 1), limit: String(Math.min(params.limit || 50, 50)) });
+  if (params.q?.trim()) query.set('q', params.q.trim());
+  if (params.status && params.status !== 'All') query.set('status', params.status.toUpperCase());
+  const response = await adminGet<{ orders: any[]; pagination: ProductPagination }>(token, `/api/admin/orders?${query}`);
 
   return {
-    orders: response.map(orderFromApi),
+    orders: response.orders.map(orderFromApi), pagination: response.pagination,
   };
+}
+
+export async function loadAdminStats(token: string) {
+  return adminGet<{ totalCustomers: number; totalOrders: number; totalProducts: number; pendingOrders: number; fulfilledOrders: number; totalRevenue: number }>(token, '/api/admin/stats');
+}
+
+export async function loadCustomerOrderHistory(token: string, customerId: string, page = 1) {
+  const response = await adminGet<{ orders: any[]; totalValue: number; pagination: ProductPagination }>(token, `/api/admin/customers/${encodeURIComponent(customerId)}/orders?page=${page}`);
+  return { orders: response.orders.map(orderFromApi), totalValue: response.totalValue, pagination: response.pagination };
 }
 
 export async function updateOrderStatus(
@@ -707,11 +790,6 @@ export async function loadAdminProducts(
   const response = await request<{
     products: any[];
     categories: string[];
-    productOptions: Array<{
-      id: string;
-      name: string;
-      pack: string;
-    }>;
     pagination: ProductPagination;
     stats: {
       totalMedicines: number;
@@ -737,14 +815,15 @@ export async function loadAdminProducts(
       ? response.categories
       : [],
 
-    productOptions: Array.isArray(response.productOptions)
-      ? response.productOptions
-      : [],
 
     pagination: response.pagination,
 
     stats: response.stats,
   };
+}
+
+export async function loadAdminProductOptions(token: string) {
+  return adminGet<{ productOptions: Array<{ id: string; name: string; pack: string }> }>(token, '/api/admin/product-options');
 }
 
 export async function loadAdminProduct(
@@ -1106,16 +1185,12 @@ export async function importProducts(
 ========================================================= */
 
 export async function loadCustomers(
-  token: string
+  token: string,
+  params: { page?: number; limit?: number; q?: string } = {}
 ) {
-  return request<Customer[]>(
-    "/api/admin/customers",
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
+  const query = new URLSearchParams({ page: String(params.page || 1), limit: String(Math.min(params.limit || 50, 50)) });
+  if (params.q?.trim()) query.set('q', params.q.trim());
+  return adminGet<{ customers: Customer[]; pagination: ProductPagination }>(token, `/api/admin/customers?${query}`);
 }
 
 /* =========================================================

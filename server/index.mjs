@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { Resend } from 'resend';
 import { parse } from 'csv-parse/sync';
+import crypto from 'crypto';
 import prismaPackage from '@prisma/client';
 
 const {
@@ -441,7 +442,8 @@ const serializeInventoryBatch = (batch) => ({
 });
 
 const serializeProduct = (product) => {
-  const batches = Array.isArray(product.inventoryBatches)
+  const hasBatches = Array.isArray(product.inventoryBatches);
+  const batches = hasBatches
     ? product.inventoryBatches.map(serializeInventoryBatch)
     : [];
 
@@ -467,12 +469,7 @@ const serializeProduct = (product) => {
     stockStrips: Number(product.stock || 0),
     stripsPerBox: stripsPerBox(product.pack),
     minOrderQuantity: Math.max(1, Number(product.minOrderQuantity || 1)),
-    inventoryBatches: batches,
-    inventorySummary: {
-      totalQuantity,
-      batchCount: batches.length,
-      expiringSoon,
-    },
+    ...(hasBatches ? { inventoryBatches: batches, inventorySummary: { totalQuantity, batchCount: batches.length, expiringSoon } } : {}),
   };
 };
 
@@ -564,6 +561,22 @@ const sendOrderEmails = async (order, customer) => {
   ]);
 };
 
+const orderListSelect = {
+  id: true, orderNumber: true, userId: true, deliveryName: true, deliveryShop: true, deliveryPhone: true, deliveryAddress: true,
+  subtotal: true, gstTotal: true, shippingTotal: true, grandTotal: true, status: true, paymentMethod: true,
+  cancelledAt: true, cancellationReason: true, deliveryPartner: true, trackingId: true, invoiceFileName: true, invoiceUploadedAt: true, invoiceUrl: true, createdAt: true,
+  items: { select: { productId: true, productName: true, unitPrice: true, quantity: true, paidQuantity: true, freeQuantity: true, totalQuantity: true, isFree: true } },
+};
+
+const sendCancellationEmails = async (order, customer) => {
+  const reason = cleanString(order.cancellationReason);
+  const reasonHtml = reason ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : '';
+  await Promise.all([
+    customer?.email ? sendMail({ to: customer.email, subject: `Order cancelled — ${order.orderNumber}`, html: `<h2>Your order has been cancelled</h2><p>Order <strong>${escapeHtml(order.orderNumber)}</strong> has been cancelled.</p>${reasonHtml}<p>Any applicable online-payment refund will be processed according to the payment provider's policy.</p>` }) : Promise.resolve(),
+    adminMail ? sendMail({ to: adminMail, subject: `Order cancelled by customer — ${order.orderNumber}`, html: `<h2>Customer cancelled an order</h2><p><strong>${escapeHtml(order.deliveryName)}</strong> cancelled order <strong>${escapeHtml(order.orderNumber)}</strong>.</p>${reasonHtml}` }) : Promise.resolve(),
+  ]);
+};
+
 /* ============================================================================
    HEALTH / BOOTSTRAP
 ============================================================================ */
@@ -579,12 +592,8 @@ app.get('/api/bootstrap', async (_req, res, next) => {
   try {
     const products = await prisma.product.findMany({
       where: { isActive: true },
-      include: {
-        inventoryBatches: {
-          orderBy: { expiryDate: 'asc' },
-        },
-      },
       orderBy: { name: 'asc' },
+      take: 50,
     });
 
     res.json({
@@ -828,9 +837,6 @@ app.get('/api/products', async (req, res, next) => {
     if (ids.length) {
       const products = await prisma.product.findMany({
         where,
-        include: {
-          inventoryBatches: { orderBy: { expiryDate: 'asc' } },
-        },
         orderBy: { name: 'asc' },
       });
       return res.json(products.map(serializeProduct));
@@ -839,9 +845,6 @@ app.get('/api/products', async (req, res, next) => {
     const [products, total, companies] = await Promise.all([
       prisma.product.findMany({
         where,
-        include: {
-          inventoryBatches: { orderBy: { expiryDate: 'asc' } },
-        },
         orderBy: { name: 'asc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -880,15 +883,7 @@ app.get('/api/orders/mine', authenticate, async (req, res, next) => {
       where: {
         userId: req.user.id,
       },
-      include: {
-        items: true,
-        statusHistory: {
-          orderBy: {
-            createdAt: 'asc',
-          },
-        },
-        user: true,
-      },
+      select: orderListSelect,
       orderBy: {
         createdAt: 'desc',
       },
@@ -898,6 +893,73 @@ app.get('/api/orders/mine', authenticate, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.post('/api/uploads/profile-image', authenticate, upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file || !req.file.mimetype.startsWith('image/')) return res.status(400).json({ error: 'Choose a valid image file.' });
+    const url = await uploadToCloudinary(req.file, 'singh-medicals/profile-images', 'image');
+    res.json({ url });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/admin/uploads/product-images', authenticate, adminOnly, upload.array('files', 4), async (req, res, next) => {
+  try {
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'Choose at least one product image.' });
+    if (files.some((file) => !file.mimetype.startsWith('image/'))) return res.status(400).json({ error: 'Only image files are supported.' });
+    const urls = await Promise.all(files.map((file) => uploadToCloudinary(file, 'singh-medicals/product-images', 'image')));
+    res.json({ urls });
+  } catch (error) { next(error); }
+});
+
+const cloudinaryConfig = () => ({
+  cloudName: cleanString(process.env.CLOUDINARY_CLOUD_NAME),
+  apiKey: cleanString(process.env.CLOUDINARY_API_KEY),
+  apiSecret: cleanString(process.env.CLOUDINARY_API_SECRET),
+});
+
+async function uploadToCloudinary(file, folder, resourceType = 'image') {
+  const { cloudName, apiKey, apiSecret } = cloudinaryConfig();
+  if (!cloudName || !apiKey || !apiSecret) throw new Error('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = crypto.createHash('sha1').update(`folder=${folder}&timestamp=${timestamp}${apiSecret}`).digest('hex');
+  const form = new FormData();
+  form.append('file', new Blob([file.buffer], { type: file.mimetype }), file.originalname);
+  form.append('api_key', apiKey);
+  form.append('timestamp', String(timestamp));
+  form.append('folder', folder);
+  form.append('signature', signature);
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, { method: 'POST', body: form });
+  const result = await response.json();
+  if (!response.ok || !result.secure_url) throw new Error(result.error?.message || 'Cloudinary upload failed.');
+  return result.secure_url;
+}
+
+app.post('/api/orders/:id/cancel', authenticate, async (req, res, next) => {
+  try {
+    const reason = cleanString(req.body.reason);
+    const order = await prisma.$transaction(async (tx) => {
+      const current = await tx.order.findFirst({ where: { userId: req.user.id, OR: [{ id: req.params.id }, { orderNumber: req.params.id }] }, include: { items: true, user: true } });
+      if (!current) throw Object.assign(new Error('Order not found.'), { statusCode: 404 });
+      if (![OrderStatus.SUBMITTED, OrderStatus.CONFIRMED].includes(current.status)) throw Object.assign(new Error('Orders cannot be cancelled after they are packed.'), { statusCode: 400 });
+      if (!current.stockRestoredAt) for (const item of current.items) await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: Number(item.totalQuantity ?? item.quantity ?? 0) } } });
+      return tx.order.update({ where: { id: current.id }, data: { status: OrderStatus.CANCELLED, cancelledAt: new Date(), cancellationReason: reason || null, ...(!current.stockRestoredAt ? { stockRestoredAt: new Date() } : {}), statusHistory: { create: { status: OrderStatus.CANCELLED, note: reason ? `Cancelled by customer: ${reason}` : 'Cancelled by customer. Stock restored.' } } }, include: { items: true, statusHistory: { orderBy: { createdAt: 'asc' } }, user: true } });
+    });
+    void sendCancellationEmails(order, order.user).catch((error) => console.error('Cancellation email delivery failed:', error.message));
+    res.json(serializeOrder(order));
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+app.get('/api/orders/:id/invoice', authenticate, async (req, res, next) => {
+  try {
+    const order = await prisma.order.findFirst({ where: { userId: req.user.id, OR: [{ id: req.params.id }, { orderNumber: req.params.id }] }, select: { invoiceFileName: true, invoiceMimeType: true, invoiceData: true, invoiceUrl: true } });
+    if (!order || (!order.invoiceData && !order.invoiceUrl)) return res.status(404).json({ error: 'Invoice not available.' });
+    if (order.invoiceUrl) return res.redirect(order.invoiceUrl);
+    const name = String(order.invoiceFileName || 'invoice').replace(/[\\\"\r\n]/g, '_');
+    res.set({ 'Content-Type': order.invoiceMimeType || 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'X-Invoice-Filename': encodeURIComponent(name) });
+    res.send(Buffer.from(order.invoiceData));
+  } catch (error) { next(error); }
 });
 
 app.post('/api/contact', async (req, res, next) => {
@@ -1232,32 +1294,50 @@ app.get(
   '/api/admin/orders',
   authenticate,
   adminOnly,
-  async (_req, res, next) => {
+  async (req, res, next) => {
     try {
-      const orders =
-        await prisma.order.findMany({
-          include: {
-            user: true,
-            items: true,
-            statusHistory: {
-              orderBy: {
-                createdAt: 'asc',
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        });
-
-      res.json(
-        orders.map(serializeOrder)
-      );
+      const q = cleanString(req.query.q);
+      const status = cleanString(req.query.status).toUpperCase();
+      const requestedPage = Number.parseInt(String(req.query.page || '1'), 10);
+      const requestedLimit = Number.parseInt(String(req.query.limit || '50'), 10);
+      const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 50) : 50;
+      const where = { ...(Object.values(OrderStatus).includes(status) ? { status } : {}), ...(q ? { OR: [{ orderNumber: { contains: q, mode: 'insensitive' } }, { deliveryName: { contains: q, mode: 'insensitive' } }, { deliveryShop: { contains: q, mode: 'insensitive' } }] } : {}) };
+      const [orders, total] = await Promise.all([
+        prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, select: orderListSelect }),
+        prisma.order.count({ where }),
+      ]);
+      res.json({ orders: orders.map(serializeOrder), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
     } catch (error) {
       next(error);
     }
   }
 );
+
+app.get('/api/admin/stats', authenticate, adminOnly, async (_req, res, next) => {
+  try {
+    const [totalCustomers, totalOrders, totalProducts, pendingOrders, fulfilledOrders, revenue] = await Promise.all([
+      prisma.user.count({ where: { role: Role.CUSTOMER } }), prisma.order.count(),
+      prisma.product.count(),
+      prisma.order.count({ where: { status: { in: [OrderStatus.SUBMITTED, OrderStatus.CONFIRMED] } } }),
+      prisma.order.count({ where: { status: OrderStatus.DELIVERED } }),
+      prisma.order.aggregate({ where: { status: { not: OrderStatus.CANCELLED } }, _sum: { grandTotal: true } }),
+    ]);
+    res.json({ totalCustomers, totalOrders, totalProducts, pendingOrders, fulfilledOrders, totalRevenue: Number(revenue._sum.grandTotal || 0) });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/admin/orders/:id/invoice', authenticate, adminOnly, upload.single('invoice'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Choose an invoice file to upload.' });
+    if (req.file.mimetype !== 'application/pdf') return res.status(400).json({ error: 'Only PDF invoices are supported.' });
+    const order = await prisma.order.findFirst({ where: { OR: [{ id: req.params.id }, { orderNumber: req.params.id }] } });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    const invoiceUrl = await uploadToCloudinary(req.file, 'singh-medicals/invoices', 'raw');
+    const updated = await prisma.order.update({ where: { id: order.id }, data: { invoiceFileName: req.file.originalname, invoiceMimeType: req.file.mimetype, invoiceData: null, invoiceUrl, invoiceUploadedAt: new Date() }, include: { items: true, statusHistory: { orderBy: { createdAt: 'asc' } } } });
+    res.json(serializeOrder(updated));
+  } catch (error) { next(error); }
+});
 
 /* ============================================================================
    ADMIN - PRODUCTS
@@ -1314,11 +1394,10 @@ app.get(
         orderBy = { name: sortDir };
       }
 
-      const [products, total, categories, totalMedicines, stockAggregate, offerCount, lowStockCount, productOptions] =
+      const [products, total, categories, totalMedicines, stockAggregate, offerCount, lowStockCount] =
         await Promise.all([
           prisma.product.findMany({
             where,
-            include: { inventoryBatches: { orderBy: { expiryDate: 'asc' } } },
             orderBy,
             skip: (page - 1) * limit,
             take: limit,
@@ -1333,16 +1412,11 @@ app.get(
           prisma.product.aggregate({ _sum: { stock: true } }),
           prisma.product.count({ where: { discountType: { not: 'NONE' } } }),
           prisma.product.count({ where: { stock: { lte: 10 } } }),
-          prisma.product.findMany({
-            select: { id: true, name: true, pack: true },
-            orderBy: { name: 'asc' },
-          }),
         ]);
 
       res.json({
         products: products.map(serializeProduct),
         categories: categories.map((item) => item.category).filter(Boolean),
-        productOptions,
         pagination: {
           page,
           limit,
@@ -2153,27 +2227,19 @@ app.get(
   '/api/admin/customers',
   authenticate,
   adminOnly,
-  async (_req, res, next) => {
+  async (req, res, next) => {
     try {
-      const customers =
-        await prisma.user.findMany({
-          where: {
-            role: Role.CUSTOMER,
-          },
-          include: {
-            _count: {
-              select: {
-                orders: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        });
-
-      res.json(
-        customers.map(
+      const q = cleanString(req.query.q);
+      const requestedPage = Number.parseInt(String(req.query.page || '1'), 10);
+      const requestedLimit = Number.parseInt(String(req.query.limit || '50'), 10);
+      const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 50) : 50;
+      const where = { role: Role.CUSTOMER, ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }, { phone: { contains: q, mode: 'insensitive' } }, { shopName: { contains: q, mode: 'insensitive' } }, { gstNumber: { contains: q, mode: 'insensitive' } }] } : {}) };
+      const [customers, total] = await Promise.all([
+        prisma.user.findMany({ where, select: { id: true, name: true, email: true, phone: true, shopName: true, gstNumber: true, drugLicence20B: true, drugLicence21B: true, address: true, city: true, state: true, pincode: true, createdAt: true, _count: { select: { orders: true } } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+        prisma.user.count({ where }),
+      ]);
+      res.json({ customers: customers.map(
           ({
             passwordHash,
             _count,
@@ -2183,13 +2249,32 @@ app.get(
             orderCount:
               _count.orders,
           })
-        )
-      );
+        ), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
     } catch (error) {
       next(error);
     }
   }
 );
+
+app.get('/api/admin/product-options', authenticate, adminOnly, async (_req, res, next) => {
+  try {
+    const productOptions = await prisma.product.findMany({ select: { id: true, name: true, pack: true }, orderBy: { name: 'asc' } });
+    res.json({ productOptions });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/customers/:id/orders', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const requestedPage = Number.parseInt(String(req.query.page || '1'), 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const where = { userId: req.params.id };
+    const [orders, total, totalValue] = await Promise.all([
+      prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * 50, take: 50, select: orderListSelect }),
+      prisma.order.count({ where }), prisma.order.aggregate({ where, _sum: { grandTotal: true } }),
+    ]);
+    res.json({ orders: orders.map(serializeOrder), totalValue: Number(totalValue._sum.grandTotal || 0), pagination: { page, limit: 50, total, totalPages: Math.ceil(total / 50) } });
+  } catch (error) { next(error); }
+});
 
 /* ============================================================================
    ADMIN - ORDER STATUS

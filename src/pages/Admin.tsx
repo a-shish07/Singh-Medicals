@@ -8,9 +8,9 @@ import CustomersTab from '../components/admin/CustomersTab';
 import ImportTab from '../components/admin/ImportTab';
 
 export default function Admin() {
-  const { navigate, adminTab, setAdminTab, isAdminLoggedIn, refreshAdminData, refreshCustomers, products, customers, orders } = useApp();
+  const { navigate, adminTab, setAdminTab, isAdminLoggedIn, refreshAdminData, products, adminStats } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  useEffect(() => { if (isAdminLoggedIn) { refreshAdminData().catch(() => undefined); refreshCustomers().catch(() => undefined); } }, [isAdminLoggedIn, refreshAdminData, refreshCustomers]);
+  useEffect(() => { if (isAdminLoggedIn) refreshAdminData().catch(() => undefined); }, [isAdminLoggedIn, refreshAdminData]);
 
   if (!isAdminLoggedIn) {
     return (
@@ -98,7 +98,7 @@ export default function Admin() {
               {tab.label}
               {tab.key === 'orders' && (
                 <span className="ml-auto text-[10px] font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'Submitted').length}
+                  {adminStats.pendingOrders}
                 </span>
               )}
             </button>
@@ -171,7 +171,7 @@ export default function Admin() {
 
               {tab.key === 'orders' && (
                 <span className="ml-auto text-[10px] font-bold bg-white/20 px-2 py-1 rounded-full">
-                  {orders.filter(o => o.status === 'Submitted').length}
+                  {adminStats.pendingOrders}
                 </span>
               )}
             </button>
@@ -233,10 +233,10 @@ export default function Admin() {
 
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-3 mt-4">
             {[
-              { label: 'Total Orders', value: orders.length, tab: 'orders' as AdminTab },
-              { label: 'Pending Orders', value: orders.filter(o => o.status === 'Submitted').length, tab: 'orders' as AdminTab, accent: true },
-              { label: 'Products', value: products.length, tab: 'products' as AdminTab },
-              { label: 'Customers', value: customers.length, tab: 'customers' as AdminTab },
+              { label: 'Total Orders', value: adminStats.totalOrders, tab: 'orders' as AdminTab },
+              { label: 'Pending Orders', value: adminStats.pendingOrders, tab: 'orders' as AdminTab, accent: true },
+              { label: 'Products', value: adminStats.totalProducts, tab: 'products' as AdminTab },
+              { label: 'Customers', value: adminStats.totalCustomers, tab: 'customers' as AdminTab },
             ].map(stat => (
               <button key={stat.label} onClick={() => setAdminTab(stat.tab)} className="text-left bg-white rounded-2xl border border-black/[0.05] p-3 sm:p-4 shadow-[0_2px_14px_rgba(0,0,0,0.04)] hover:border-[#0D9A55]/30 hover:-translate-y-0.5 transition-all">
                 <p className="text-[10px] sm:text-xs uppercase tracking-wide font-bold text-[#9CA3AF]">{stat.label}</p>

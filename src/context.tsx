@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import {
   adminLogin as apiAdminLogin,
@@ -18,12 +18,16 @@ import {
   loadCustomerOrders,
   loadAdminOrders,
   loadAdminProducts,
+  loadAdminStats,
   loadProducts,
   loadProductsByIds,
   lookupOrder,
   requestOtp as apiRequestOtp,
   updateOrderStatus as apiUpdateOrderStatus,
   sendTrackingEmail as apiSendTrackingEmail,
+  cancelCustomerOrder as apiCancelCustomerOrder,
+  uploadOrderInvoice as apiUploadOrderInvoice,
+  downloadOrderInvoice as apiDownloadOrderInvoice,
   updateProduct as apiUpdateProduct,
   verifyOtp as apiVerifyOtp,
   loadCustomerProfile,
@@ -78,7 +82,7 @@ navigateToOrder: (id: string) => void;
   setAdminTab: (t: AdminTab) => void;
 
  products: Product[];
-setProducts: (products: Product[]) => void;
+  setProducts: Dispatch<SetStateAction<Product[]>>;
 refreshProducts: () => Promise<void>;
 createProduct: (payload: {
   name: string;
@@ -113,7 +117,8 @@ updateProduct: (id: string, patch: Partial<Product>) => Promise<void>;
   isCartOpen: boolean;
   setIsCartOpen: (v: boolean) => void;
 
- isLoggedIn: boolean;
+  isLoggedIn: boolean;
+  customerToken: string;
 setIsLoggedIn: (v: boolean) => void;
 customerPhone: string;
 customerProfile: CustomerProfile | null;
@@ -168,6 +173,8 @@ adminLogin: (
   refreshOrders: () => Promise<void>;
   refreshAdminData: () => Promise<void>;
   customers: Customer[];
+  setCustomers: (customers: Customer[]) => void;
+  adminStats: { totalCustomers: number; totalOrders: number; totalProducts: number; pendingOrders: number; fulfilledOrders: number; totalRevenue: number };
   refreshCustomers: () => Promise<void>;
 
   confirmedOrderId: string;
@@ -178,6 +185,9 @@ adminLogin: (
   trackingId: string,
   deliveryPartner: string
 ) => Promise<void>;
+  cancelOrder: (orderId: string, reason?: string) => Promise<void>;
+  uploadInvoice: (orderId: string, file: File) => Promise<void>;
+  downloadInvoice: (orderId: string) => Promise<void>;
   importProductRows: (
     rows: string[][]
   ) => Promise<{ inserted: number; updated: number }>;
@@ -260,6 +270,7 @@ export function AppProvider({
   const [orders, setOrders] =
     useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [adminStats, setAdminStats] = useState({ totalCustomers: 0, totalOrders: 0, totalProducts: 0, pendingOrders: 0, fulfilledOrders: 0, totalRevenue: 0 });
 
  const [cartItems, setCartItems] =
   useState<CartItem[]>(() =>
@@ -997,18 +1008,14 @@ const saveCustomerProfile = useCallback(
       return;
     }
 
-    const [orderResponse, productResponse] = await Promise.all([
-      loadAdminOrders(adminToken),
-      loadAdminProducts(adminToken, { page: 1, limit: 50 }),
-    ]);
-
-    setOrders(orderResponse.orders);
-    setProducts(productResponse.products);
+    const stats = await loadAdminStats(adminToken);
+    setAdminStats(stats);
   }, [adminToken]);
 
   const refreshCustomers = useCallback(async () => {
     if (!adminToken) { setCustomers([]); return; }
-    setCustomers(await apiLoadCustomers(adminToken));
+    const response = await apiLoadCustomers(adminToken);
+    setCustomers(response.customers);
   }, [adminToken]);
 
   const updateProduct = useCallback(async (id: string, patch: Partial<Product>) => {
@@ -1097,9 +1104,28 @@ const saveCustomerProfile = useCallback(
           order.id === orderId ? response.order : order
         )
       );
+      const stats = await loadAdminStats(adminToken);
+      setAdminStats(stats);
     },
     [adminToken]
   );
+
+  const cancelOrder = useCallback(async (orderId: string, reason?: string) => {
+    if (!customerToken) throw new Error("Please sign in to cancel an order.");
+    const response = await apiCancelCustomerOrder(customerToken, orderId, reason);
+    setOrders((prev) => prev.map((order) => order.id === orderId ? response.order : order));
+  }, [customerToken]);
+
+  const uploadInvoice = useCallback(async (orderId: string, file: File) => {
+    if (!adminToken) throw new Error("Admin session required");
+    const response = await apiUploadOrderInvoice(adminToken, orderId, file);
+    setOrders((prev) => prev.map((order) => order.id === orderId ? response.order : order));
+  }, [adminToken]);
+
+  const downloadInvoice = useCallback(async (orderId: string) => {
+    if (!customerToken) throw new Error("Please sign in to download an invoice.");
+    await apiDownloadOrderInvoice(customerToken, orderId);
+  }, [customerToken]);
 
   const importProductRows = useCallback(
     async (rows: string[][]) => {
@@ -1167,6 +1193,7 @@ updateProduct,
         isCartOpen,
         setIsCartOpen,
         isLoggedIn,
+        customerToken,
 setIsLoggedIn,
 customerPhone,
 customerProfile,
@@ -1188,11 +1215,16 @@ verifyOtp,
         refreshOrders,
         refreshAdminData,
         customers,
+        setCustomers,
+        adminStats,
         refreshCustomers,
         confirmedOrderId,
         placeOrder,
         updateOrderStatus,
         sendTrackingEmail,
+        cancelOrder,
+        uploadInvoice,
+        downloadInvoice,
         importProductRows,
         lookupTrackedOrder,
       }}

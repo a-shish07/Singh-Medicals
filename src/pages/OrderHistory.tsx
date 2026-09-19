@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../context';
 import type { OrderStatus } from '../types';
 import { calculateOrderTotals, finalOrderItemPrice } from '../lib/pricing';
@@ -30,7 +30,25 @@ export default function OrderHistory() {
   refreshOrders,
   addToast,
   products,
+  cancelOrder,
+  downloadInvoice,
 } = useApp();
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [cancellationTarget, setCancellationTarget] = useState<(typeof orders)[number] | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const cancel = async () => {
+    if (!cancellationTarget) return;
+    const orderId = cancellationTarget.id;
+    setCancellingOrderId(orderId);
+    try {
+      await cancelOrder(orderId, cancellationReason.trim() || undefined);
+      addToast('Order cancelled. Stock has been restored.', 'success');
+      setCancellationTarget(null);
+      setCancellationReason('');
+    }
+    catch (error) { addToast(error instanceof Error ? error.message : 'Could not cancel order', 'error'); }
+    finally { setCancellingOrderId(null); }
+  };
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -271,6 +289,16 @@ export default function OrderHistory() {
                       🚚 Track Order
                     </button>
 
+                    {['Submitted', 'Confirmed'].includes(order.status) && (
+                      <button onClick={() => { setCancellationTarget(order); setCancellationReason(''); }} disabled={cancellingOrderId === order.id} className="flex-1 sm:flex-none sm:px-6 py-3 border-2 border-red-500 text-red-600 rounded-xl font-bold text-sm hover:bg-red-50 transition-colors disabled:opacity-50">
+                        {cancellingOrderId === order.id ? 'Cancelling…' : 'Cancel Order'}
+                      </button>
+                    )}
+                    {order.invoiceFileName && (
+                      <button onClick={() => downloadInvoice(order.id).catch((error) => addToast(error.message || 'Could not download invoice', 'error'))} className="flex-1 sm:flex-none sm:px-6 py-3 border-2 border-[#0D9A55] text-[#0D9A55] rounded-xl font-bold text-sm hover:bg-[#E8F5EE] transition-colors">
+                        Download Invoice
+                      </button>
+                    )}
                     <button
                       onClick={() => navigate('catalogue')}
                       className="flex-1 sm:flex-none sm:px-6 py-3 bg-[#0D9A55] text-white rounded-xl font-bold text-sm hover:bg-[#0A7A43] transition-colors"
@@ -286,6 +314,29 @@ export default function OrderHistory() {
           </div>
         )}
       </div>
+
+      {cancellationTarget && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-950/45 p-0 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="cancel-order-title">
+          <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="m15 9-6 6m0-6 6 6m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+              </div>
+              <div>
+                <h2 id="cancel-order-title" className="text-lg font-extrabold text-[#1C1C1E]">Cancel this order?</h2>
+                <p className="mt-1 text-sm leading-6 text-[#6B7280]">Your order <span className="font-mono font-semibold text-[#1C1C1E]">{cancellationTarget.id}</span> will be cancelled and cannot be restored. We will notify you and Singh Medicals by email.</p>
+              </div>
+            </div>
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">Cancellation is available only before packing. Stock reserved for this order will be released.</div>
+            <label className="mt-5 block text-sm font-bold text-[#1C1C1E]">Reason <span className="font-normal text-[#9CA3AF]">(optional)</span></label>
+            <textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={500} rows={3} placeholder="Tell us why you are cancelling…" className="mt-2 w-full resize-none rounded-xl border border-black/[0.10] bg-[#F7F9F7] px-3 py-2.5 text-sm outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100" />
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button onClick={() => setCancellationTarget(null)} disabled={cancellingOrderId !== null} className="rounded-xl px-4 py-2.5 text-sm font-bold text-[#6B7280] hover:bg-slate-100 disabled:opacity-50">Keep order</button>
+              <button onClick={cancel} disabled={cancellingOrderId !== null} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">{cancellingOrderId ? 'Cancelling…' : 'Yes, cancel order'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

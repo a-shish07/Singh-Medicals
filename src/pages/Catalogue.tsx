@@ -1135,12 +1135,18 @@ export default function Catalogue() {
   const [totalPages, setTotalPages] = useState(1);
   const [companies, setCompanies] = useState<string[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const requestId = useRef(0);
   const PAGE_SIZE = 50;
 
   useEffect(() => {
     setPage(1);
   }, [search, category, company]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     const currentRequest = ++requestId.current;
@@ -1152,7 +1158,7 @@ export default function Catalogue() {
         const response = await loadProducts({
           page,
           limit: PAGE_SIZE,
-          q: search,
+          q: debouncedSearch,
           category,
           company,
         });
@@ -1166,7 +1172,13 @@ export default function Catalogue() {
 
         // Keep the existing product context aligned with the current page.
         // Cart-only products are fetched separately by AppProvider when needed.
-        setProducts(response.products);
+        setProducts((previous) => {
+          const cartIds = new Set(cartItems.map((item) => item.productId));
+          const retained = previous.filter((product) => cartIds.has(product.id));
+          const byId = new Map(retained.map((product) => [product.id, product]));
+          response.products.forEach((product: Product) => byId.set(product.id, product));
+          return [...byId.values()];
+        });
       } catch (error) {
         if (cancelled || currentRequest !== requestId.current) return;
         setCatalogueProducts([]);
@@ -1188,7 +1200,7 @@ export default function Catalogue() {
     return () => {
       cancelled = true;
     };
-  }, [search, category, company, page, addToast, setProducts]);
+  }, [debouncedSearch, category, company, page, addToast, setProducts, cartItems]);
 
   const filtered = catalogueProducts;
 

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../../context';
+import { loadAdminOrders } from '../../lib/api';
 import type { OrderStatus } from '../../types';
 import { STATUS_STYLES, ALL_STATUSES } from './constants';
 import { calculateOrderTotals, finalOrderItemPrice } from '../../lib/pricing';
@@ -11,6 +12,9 @@ const {
   sendTrackingEmail,
   addToast,
   products,
+  uploadInvoice,
+  adminToken,
+  setOrders,
 } = useApp();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'All'>('All');
   const [searchQ, setSearchQ] = useState('');
@@ -18,13 +22,24 @@ const {
   const [deliveryPartner, setDeliveryPartner] = useState('');
   const [trackingId, setTrackingId] = useState('');
   const [sendingTracking, setSendingTracking] = useState(false);
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const filtered = orders.filter(o => {
-    const matchStatus = statusFilter === 'All' || o.status === statusFilter;
-    const q = searchQ.toLowerCase();
-    const matchSearch = !q || o.id.toLowerCase().includes(q) || o.retailerShop.toLowerCase().includes(q) || o.retailerName.toLowerCase().includes(q);
-    return matchStatus && matchSearch;
-  });
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(searchQ), 300); return () => window.clearTimeout(timer); }, [searchQ]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
+  useEffect(() => {
+    if (!adminToken) return;
+    let cancelled = false;
+    loadAdminOrders(adminToken, { page, limit: 50, q: debouncedSearch, status: statusFilter }).then((response) => {
+      if (!cancelled) { setOrders(response.orders); setTotal(response.pagination.total); setTotalPages(Math.max(1, response.pagination.totalPages)); }
+    }).catch((error) => { if (!cancelled) addToast(error instanceof Error ? error.message : 'Could not load orders', 'error'); });
+    return () => { cancelled = true; };
+  }, [adminToken, page, debouncedSearch, statusFilter, setOrders, addToast]);
+
+  const filtered = orders;
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
   const orderItemPrice = (item: (typeof orders)[number]['items'][number]) =>
@@ -84,6 +99,15 @@ const {
     setSendingTracking(false);
   }
 };
+
+  const uploadInvoiceFile = async (file: File | undefined) => {
+    if (!file || !selectedOrder) return;
+    if (file.type !== 'application/pdf') { addToast('Please choose a PDF invoice.', 'error'); return; }
+    setUploadingInvoice(true);
+    try { await uploadInvoice(selectedOrder.id, file); addToast('Invoice uploaded for the customer.', 'success'); }
+    catch (error) { addToast(error instanceof Error ? error.message : 'Could not upload invoice', 'error'); }
+    finally { setUploadingInvoice(false); }
+  };
 
   if (selectedOrder) {
     return (
@@ -313,6 +337,27 @@ const {
 </div>
 
             <div className="mt-5 pt-4 border-t border-black/[0.06]">
+              <h4 className="font-semibold text-sm text-[#6B7280] mb-3 uppercase tracking-wide">Invoice</h4>
+              <label className="block w-full cursor-pointer rounded-xl border-2 border-dashed border-[#0D9A55]/30 bg-[#E8F5EE]/40 px-3 py-3 text-center text-sm font-bold text-[#0D9A55] hover:bg-[#E8F5EE]">
+                {uploadingInvoice ? 'Uploading invoice…' : selectedOrder.invoiceFileName ? `Replace ${selectedOrder.invoiceFileName}` : 'Upload PDF invoice'}
+                <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={uploadingInvoice} onChange={(event) => uploadInvoiceFile(event.target.files?.[0])} />
+              </label>
+              {selectedOrder.invoiceFileName && <p className="mt-2 text-xs text-[#0D9A55]">Customer can now download: {selectedOrder.invoiceFileName}</p>}
+            </div>
+
+            {selectedOrder.status === 'Cancelled' && (
+              <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center gap-2 text-red-700">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="m15 9-6 6m0-6 6 6m6 3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                  <h4 className="text-sm font-extrabold">Cancellation details</h4>
+                </div>
+                <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-red-500">Customer reason</p>
+                <p className="mt-1 text-sm leading-6 text-red-900">{selectedOrder.cancellationReason || 'No reason was provided by the customer.'}</p>
+                {selectedOrder.cancelledAt && <p className="mt-3 border-t border-red-200 pt-3 text-xs text-red-600">Cancelled on {new Date(selectedOrder.cancelledAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+              </div>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-black/[0.06]">
               <h4 className="font-semibold text-sm text-[#6B7280] mb-3 uppercase tracking-wide">Update Status</h4>
               <div className="grid grid-cols-2 sm:grid-cols-1 gap-2">
                 {ALL_STATUSES.map(s => (
@@ -490,6 +535,11 @@ const {
             No orders match the filter
           </div>
         )}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3 text-sm text-[#6B7280]">
+        <span>Showing {filtered.length} of {total} orders</span>
+        <div className="flex gap-2"><button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Previous</button><span className="px-2 py-1.5">{page} / {totalPages}</span><button onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page === totalPages} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Next</button></div>
       </div>
     </div>
   );

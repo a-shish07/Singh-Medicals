@@ -6,6 +6,7 @@ import {
 } from "react";
 import { motion } from "framer-motion";
 import { useApp } from "../context";
+import { uploadProfileImage } from "../lib/api";
 
 type ProfileForm = {
   name: string;
@@ -339,6 +340,7 @@ function SectionIcon({
 export default function Profile() {
   const {
     customerProfile,
+    customerToken,
     refreshCustomerProfile,
     saveCustomerProfile,
     addToast,
@@ -612,12 +614,12 @@ export default function Profile() {
   }
 
   try {
-    const compressedImage =
-      await compressProfileImage(file);
+    if (!customerToken) throw new Error("Please sign in to upload a profile image.");
+    const { url } = await uploadProfileImage(customerToken, file);
 
     updateField(
       "profileImage",
-      compressedImage
+      url
     );
 
     addToast(
