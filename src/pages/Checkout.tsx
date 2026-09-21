@@ -14,6 +14,18 @@ type CheckoutForm = {
   contact: string;
 };
 
+declare global { interface Window { Razorpay?: new (options: Record<string, unknown>) => { open: () => void }; } }
+
+function loadRazorpay() {
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(); script.onerror = () => reject(new Error('Secure payment checkout could not be loaded.'));
+    document.head.appendChild(script);
+  });
+}
+
 export default function Checkout() {
   const {
     cartItems,
@@ -24,6 +36,9 @@ export default function Checkout() {
     refreshCustomerProfile,
     addToast,
     products,
+    startOnlinePayment,
+    confirmOnlinePayment,
+    cancelOrder,
   } = useApp();
 
   const [form, setForm] = useState<CheckoutForm>({
@@ -35,6 +50,7 @@ export default function Checkout() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'RAZORPAY'>('COD');
 
   const checkout = useMemo(() => calculateCart(products, cartItems), [cartItems, products]);
   const subtotal = checkout.subtotal;
@@ -140,11 +156,50 @@ const checkoutTotal = checkout.grandTotal;
     try {
       setPlacingOrder(true);
 
-      await placeOrder({
+      const details = {
         shopName: form.shopName.trim(),
         address: form.address.trim(),
         contact: form.contact.trim(),
-      });
+      };
+      if (paymentMethod === 'COD') {
+        await placeOrder(details);
+        return;
+      }
+      const session = await startOnlinePayment(details);
+      await loadRazorpay();
+      if (!window.Razorpay) throw new Error('Secure payment checkout is unavailable.');
+      new window.Razorpay({
+        key: session.razorpay.keyId, order_id: session.razorpay.orderId, amount: session.razorpay.amount, currency: session.razorpay.currency,
+        name: 'Singh Medicals', description: `Order ${session.orderId}`,
+        prefill: { name: form.shopName, contact: form.contact },
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          try { await confirmOnlinePayment(response); }
+          catch { addToast("We're verifying your payment. Please check your orders before trying again.", 'info'); }
+        },
+        modal: {
+  ondismiss: async () => {
+    try {
+      await cancelOrder(
+        session.orderId,
+        'Customer cancelled Razorpay payment'
+      );
+
+      addToast(
+        'Payment cancelled. The order has been cancelled and stock has been restored.',
+        'info'
+      );
+    } catch (error) {
+      console.error('Failed to cancel cancelled Razorpay order:', error);
+
+      addToast(
+        'Payment was not completed. Your order will be reconciled automatically.',
+        'info'
+      );
+    }
+  },
+},
+        theme: { color: '#0D9A55' },
+      }).open();
     } catch (error) {
       addToast(
         error instanceof Error
@@ -361,52 +416,134 @@ const checkoutTotal = checkout.grandTotal;
           </div>
 
           {/* Payment Method */}
-          <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-5 sm:p-6">
-            <h2
-              className="font-bold text-[#1C1C1E] mb-5 flex items-center gap-2"
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
+          {/* Payment Method */}
+<div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] p-5 sm:p-6">
+  <h2
+    className="font-bold text-[#1C1C1E] mb-5 flex items-center gap-2"
+    style={{ fontFamily: "'DM Sans', sans-serif" }}
+  >
+    <span className="w-7 h-7 rounded-full bg-[#0D9A55] text-white text-xs flex items-center justify-center font-bold">
+      2
+    </span>
+    Payment Method
+  </h2>
+
+  <div className="flex flex-col gap-3">
+
+    {/* COD */}
+    <button
+      type="button"
+      onClick={() => setPaymentMethod("COD")}
+      className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+        paymentMethod === "COD"
+          ? "border-[#0D9A55] bg-[#E8F5EE]"
+          : "border-black/[0.08] bg-white hover:border-[#0D9A55]/40"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+
+        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
+          <span className="text-xl">💵</span>
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-[#1C1C1E]">
+                Cash on Delivery
+              </h3>
+
+              <p className="text-xs text-[#6B7280] mt-1">
+                Pay when your order is delivered
+              </p>
+            </div>
+
+            <div
+              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                paymentMethod === "COD"
+                  ? "border-[#0D9A55] bg-[#0D9A55]"
+                  : "border-[#9CA3AF]"
+              }`}
             >
-              <span className="w-7 h-7 rounded-full bg-[#0D9A55] text-white text-xs flex items-center justify-center font-bold">
-                2
-              </span>
-              Payment Method
-            </h2>
-
-            <div className="border-2 border-[#0D9A55] bg-[#E8F5EE] rounded-2xl p-4 flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
-                <span className="text-xl">💵</span>
-              </div>
-
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-bold text-[#1C1C1E]">
-                    Cash on Delivery
-                  </h3>
-
-                  <div className="w-5 h-5 rounded-full bg-[#0D9A55] text-white flex items-center justify-center">
-                    <svg
-                      className="w-3 h-3"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 12l4 4L19 6"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                <p className="text-xs text-[#0A7A43] mt-1">
-                  Pay when your order is delivered. No online
-                  payment is required.
-                </p>
-              </div>
+              {paymentMethod === "COD" && (
+                <svg
+                  className="w-3 h-3 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 12l4 4L19 6"
+                  />
+                </svg>
+              )}
             </div>
           </div>
+        </div>
+      </div>
+    </button>
+
+    {/* Online Payment */}
+    <button
+      type="button"
+      onClick={() => setPaymentMethod("RAZORPAY")}
+      className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+        paymentMethod === "RAZORPAY"
+          ? "border-[#0D9A55] bg-[#E8F5EE]"
+          : "border-black/[0.08] bg-white hover:border-[#0D9A55]/40"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+
+        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
+          <span className="text-xl">💳</span>
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-[#1C1C1E]">
+                Pay Online
+              </h3>
+
+              <p className="text-xs text-[#6B7280] mt-1">
+                UPI, Credit/Debit Card, Net Banking
+              </p>
+            </div>
+
+            <div
+              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                paymentMethod === "RAZORPAY"
+                  ? "border-[#0D9A55] bg-[#0D9A55]"
+                  : "border-[#9CA3AF]"
+              }`}
+            >
+              {paymentMethod === "RAZORPAY" && (
+                <svg
+                  className="w-3 h-3 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={3}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 12l4 4L19 6"
+                  />
+                </svg>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+
+  </div>
+</div>
 
           {/* Notice */}
           <div className="p-4 bg-[#FFF9E8] border border-[#F1D98A] rounded-2xl flex items-start gap-3">
@@ -535,7 +672,11 @@ const checkoutTotal = checkout.grandTotal;
                 </p>
 
                 <p className="text-xs text-[#6B7280] mt-0.5">
-                  Cash on Delivery
+                  {paymentMethod === 'COD'  ? "Confirm COD Order →"
+  : `Pay ₹${checkoutTotal.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} Online →`}
                 </p>
               </div>
 
@@ -564,12 +705,15 @@ const checkoutTotal = checkout.grandTotal;
                   Placing Order...
                 </span>
               ) : (
-                "Confirm COD Order →"
+                paymentMethod === 'COD' ? "Confirm COD Order →" : `Pay ₹${checkoutTotal.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} Online →`
               )}
             </button>
 
             <p className="text-[11px] text-center text-[#9CA3AF] mt-3">
-              You will pay when the order is delivered.
+              {paymentMethod === 'COD' ? 'You will pay when the order is delivered.' : 'Payment is confirmed only after secure server verification.'}
             </p>
           </div>
         </div>

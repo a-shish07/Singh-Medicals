@@ -12,6 +12,7 @@
     "db:seed": "node prisma/seed.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test": "node --test test/**/*.test.mjs",
     "preview": "vite preview",
     "format": "oxfmt"
   },

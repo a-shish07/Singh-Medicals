@@ -201,6 +201,14 @@ function orderFromApi(order: any): Order {
 
     paymentMethod:
       order.paymentMethod || "COD",
+    paymentStatus: order.payment?.status || null,
+    payment: order.payment ? {
+      status: order.payment.status,
+      method: order.payment.method || order.payment.provider || 'RAZORPAY',
+      amount: Number(order.payment.amount || 0),
+      refundedAmount: Number(order.payment.refundedAmount || 0),
+      refunds: Array.isArray(order.payment.refunds) ? order.payment.refunds.map((refund: any) => ({ ...refund, amount: Number(refund.amount || 0) })) : [],
+    } : null,
     deliveryPartner: order.deliveryPartner || null,
     trackingId: order.trackingId || null,
     cancellationReason: order.cancellationReason || null,
@@ -578,12 +586,15 @@ export async function createOrder(payload: {
     quantity: number;
   }>;
   token: string;
+  idempotencyKey: string;
+  paymentMethod?: 'COD' | 'RAZORPAY';
 }) {
   const response = await request<any>("/api/orders", {
     method: "POST",
 
     headers: {
       Authorization: `Bearer ${payload.token}`,
+      'Idempotency-Key': payload.idempotencyKey,
     },
 
     body: JSON.stringify({
@@ -598,13 +609,19 @@ export async function createOrder(payload: {
 
       deliveryAddress: payload.address,
 
-      paymentMethod: "COD",
+      paymentMethod: payload.paymentMethod || "COD",
     }),
   });
 
   return {
     order: orderFromApi(response),
+    razorpay: response.razorpay as { keyId: string; orderId: string; amount: number; currency: string } | undefined,
   };
+}
+
+export async function verifyRazorpayPayment(token: string, payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) {
+  const response = await request<any>('/api/payments/razorpay/verify', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
+  return { order: orderFromApi(response.order) };
 }
 
 export async function loadCustomerOrders(
@@ -630,7 +647,15 @@ export async function cancelCustomerOrder(token: string, orderId: string, reason
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ reason }),
   });
-  return { order: orderFromApi(response) };
+  return response.pendingRefund ? { pendingRefund: true, refund: response.refund } : { order: orderFromApi(response) };
+}
+
+export async function createAdminRefund(token: string, orderId: string, amount: number, reason: string, idempotencyKey: string) {
+  return request<any>(`/api/admin/orders/${encodeURIComponent(orderId)}/refunds`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ amount, reason }),
+  });
 }
 
 export async function uploadOrderInvoice(token: string, orderId: string, file: File) {

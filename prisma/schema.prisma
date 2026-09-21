@@ -23,6 +23,26 @@ enum OrderStatus {
 
 enum PaymentMethod {
   COD
+  RAZORPAY
+}
+
+enum PaymentStatus {
+  COD_PENDING
+  CREATED
+  PENDING
+  CAPTURED
+  FAILED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+  PARTIALLY_REFUNDED
+  EXPIRED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
 }
 
 enum DiscountType {
@@ -141,6 +161,9 @@ model Order {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   paymentMethod   PaymentMethod      @default(COD)
+  payments        Payment[]
+  idempotencyKey  String?
+  refunds         Refund[]
   stockDeductedAt DateTime?
   stockRestoredAt DateTime?
   cancelledAt     DateTime?
@@ -154,6 +177,63 @@ model Order {
   invoiceUploadedAt DateTime?
 
   @@index([userId, createdAt])
+  @@unique([userId, idempotencyKey])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  orderId               String
+  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider              String        @default("RAZORPAY")
+  status                PaymentStatus @default(CREATED)
+  amountPaise           Int
+  currency              String        @default("INR")
+  razorpayOrderId       String?       @unique
+  razorpayPaymentId     String?       @unique
+  razorpaySignature     String?
+  failureCode           String?
+  failureDescription    String?
+  capturedAt            DateTime?
+  refundedPaise         Int           @default(0)
+  refundId              String?       @unique
+  refundStatus          String?
+  refunds               Refund[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([orderId, createdAt])
+  @@index([status])
+  @@index([status, createdAt])
+}
+
+model Refund {
+  id                    String       @id @default(cuid())
+  orderId               String
+  paymentId             String
+  requestedById         String
+  razorpayRefundId      String?      @unique
+  idempotencyKey        String       @unique
+  amountPaise           Int
+  currency              String       @default("INR")
+  status                RefundStatus @default(PENDING)
+  reason                String?
+  providerFailure       String?
+  completedAt           DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  order                 Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment               Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@index([orderId, createdAt])
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(cuid())
+  providerId  String   @unique
+  event       String
+  payload     Json
+  receivedAt  DateTime @default(now())
 }
 
 model OrderItem {

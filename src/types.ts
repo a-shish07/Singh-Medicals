@@ -88,7 +88,15 @@ export interface Order {
   items: OrderItem[];
   total: number;
   status: OrderStatus;
-  paymentMethod: 'COD';
+  paymentMethod: 'COD' | 'RAZORPAY';
+  paymentStatus?: string | null;
+  payment?: {
+    status: string;
+    method: string;
+    amount: number;
+    refundedAmount: number;
+    refunds: Array<{ id: string; amount: number; status: string; reason?: string | null; createdAt?: string }>;
+  } | null;
   deliveryPartner?: string | null;
   trackingId?: string | null;
   cancellationReason?: string | null;

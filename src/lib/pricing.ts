@@ -149,6 +149,7 @@ export function finalOrderItemPrice(
 export function calculateOrderTotals(subtotalAmount: number) {
   const subtotal = money(subtotalAmount);
   const gst = money((subtotal * GST_RATE) / 100);
+   
   const shipping = subtotal > FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
 
   return {

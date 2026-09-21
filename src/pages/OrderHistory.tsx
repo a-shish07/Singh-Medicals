@@ -149,8 +149,18 @@ export default function OrderHistory() {
         ) : (
           <div className="flex flex-col gap-4">
 
-            {myOrders.map((order) => (
-              <div
+            {myOrders.map((order) => {
+  const refundPending =
+    order.paymentMethod === 'RAZORPAY' &&
+    order.paymentStatus === 'REFUND_PENDING';
+
+  const refundProcessed =
+    order.paymentMethod === 'RAZORPAY' &&
+    order.payment?.refundedAmount &&
+    Number(order.payment.refundedAmount) > 0;
+
+  return (
+    <div
                 key={order.id}
                 className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden hover:shadow-[0_5px_25px_rgba(0,0,0,0.08)] transition-shadow"
               >
@@ -166,12 +176,24 @@ export default function OrderHistory() {
                           {order.id}
                         </span>
 
-                        <span
-                          className={`px-2.5 py-1 text-xs font-bold rounded-full flex items-center gap-1 ${STATUS_STYLES[order.status]}`}
-                        >
-                          <span>{STATUS_ICONS[order.status]}</span>
-                          {order.status}
-                        </span>
+                        {refundPending ? (
+  <span className="px-2.5 py-1 text-xs font-bold rounded-full flex items-center gap-1 bg-amber-100 text-amber-700">
+    <span>⏳</span>
+    Refund Pending
+  </span>
+) : refundProcessed && order.status === 'Cancelled' ? (
+  <span className="px-2.5 py-1 text-xs font-bold rounded-full flex items-center gap-1 bg-green-100 text-green-700">
+    <span>✓</span>
+    Refunded
+  </span>
+) : (
+  <span
+    className={`px-2.5 py-1 text-xs font-bold rounded-full flex items-center gap-1 ${STATUS_STYLES[order.status]}`}
+  >
+    <span>{STATUS_ICONS[order.status]}</span>
+    {order.status}
+  </span>
+)}
                       </div>
 
                       <p className="text-sm text-[#6B7280]">
@@ -199,7 +221,7 @@ export default function OrderHistory() {
                   </div>
 
                   {/* Delivery Details */}
-                  <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
 
                     <div className="bg-[#F7F9F7] rounded-xl p-3.5">
                       <p className="text-[11px] uppercase tracking-wide font-bold text-[#9CA3AF] mb-1">
@@ -215,6 +237,60 @@ export default function OrderHistory() {
                       </p>
                     </div>
 
+                   {order.paymentMethod === 'RAZORPAY' && (
+  <div
+    className={`mt-3 rounded-xl border p-3 text-sm ${
+      refundPending
+        ? 'border-amber-200 bg-amber-50 text-amber-950'
+        : refundProcessed && order.status === 'Cancelled'
+          ? 'border-green-200 bg-green-50 text-green-950'
+          : 'border-blue-100 bg-blue-50 text-blue-950'
+    }`}
+  >
+    {refundPending ? (
+      <>
+        <p className="font-bold flex items-center gap-2">
+          <span>⏳</span>
+          Refund Pending
+        </p>
+
+        <p className="mt-1 leading-5">
+          Your refund of ₹
+          {(order.payment?.amount || order.total).toLocaleString('en-IN')}
+          {' '}has been requested from Razorpay and is awaiting confirmation.
+        </p>
+
+        <p className="mt-2 text-xs font-semibold">
+          The order will be cancelled automatically once the refund is confirmed.
+        </p>
+      </>
+    ) : refundProcessed && order.status === 'Cancelled' ? (
+      <>
+        <p className="font-bold flex items-center gap-2">
+          <span>✓</span>
+          Refund Completed
+        </p>
+
+        <p className="mt-1">
+          Refunded: ₹
+          {Number(order.payment?.refundedAmount || 0).toLocaleString('en-IN')}
+        </p>
+      </>
+    ) : (
+      <>
+        <p className="font-bold">
+          Online payment: {order.paymentStatus || 'Pending'}
+        </p>
+
+        <p className="mt-1">
+          ₹{Number(order.payment?.amount || order.total).toLocaleString('en-IN')}
+          {' '}secured through Razorpay.
+        </p>
+      </>
+    )}
+  </div>
+)}
+
                     <div className="bg-[#F7F9F7] rounded-xl p-3.5">
                       <p className="text-[11px] uppercase tracking-wide font-bold text-[#9CA3AF] mb-1">
                         Payment
@@ -227,10 +303,10 @@ export default function OrderHistory() {
 
                         <div>
                           <p className="text-sm font-semibold text-[#1C1C1E]">
-                            Cash on Delivery
+                            {order.paymentMethod === 'RAZORPAY' ? `Razorpay — ${order.paymentStatus || 'Pending'}` : 'Cash on Delivery'}
                           </p>
                           <p className="text-xs text-[#6B7280]">
-                            Pay when your order arrives
+                            {order.paymentMethod === 'RAZORPAY' ? 'Secure online payment' : 'Pay when your order arrives'}
                           </p>
                         </div>
                       </div>
@@ -289,8 +365,8 @@ export default function OrderHistory() {
                       🚚 Track Order
                     </button>
 
-                    {['Submitted', 'Confirmed'].includes(order.status) && (
-                      <button onClick={() => { setCancellationTarget(order); setCancellationReason(''); }} disabled={cancellingOrderId === order.id} className="flex-1 sm:flex-none sm:px-6 py-3 border-2 border-red-500 text-red-600 rounded-xl font-bold text-sm hover:bg-red-50 transition-colors disabled:opacity-50">
+                    {['Submitted', 'Confirmed'].includes(order.status) && !refundPending && (
+  <button onClick={() => { setCancellationTarget(order); setCancellationReason(''); }} disabled={cancellingOrderId === order.id} className="flex-1 sm:flex-none sm:px-6 py-3 border-2 border-red-500 text-red-600 rounded-xl font-bold text-sm hover:bg-red-50 transition-colors disabled:opacity-50">
                         {cancellingOrderId === order.id ? 'Cancelling…' : 'Cancel Order'}
                       </button>
                     )}
@@ -309,7 +385,8 @@ export default function OrderHistory() {
                   </div>
                 </div>
               </div>
-            ))}
+  );
+            })}
 
           </div>
         )}

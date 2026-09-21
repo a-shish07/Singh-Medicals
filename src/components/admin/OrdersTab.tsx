@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../../context';
-import { loadAdminOrders } from '../../lib/api';
+import { createAdminRefund, loadAdminOrders } from '../../lib/api';
 import type { OrderStatus } from '../../types';
 import { STATUS_STYLES, ALL_STATUSES } from './constants';
 import { calculateOrderTotals, finalOrderItemPrice } from '../../lib/pricing';
@@ -23,6 +23,7 @@ const {
   const [trackingId, setTrackingId] = useState('');
   const [sendingTracking, setSendingTracking] = useState(false);
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -109,6 +110,24 @@ const {
     finally { setUploadingInvoice(false); }
   };
 
+  const refundSelectedOrder = async () => {
+    if (!selectedOrder || !adminToken || selectedOrder.paymentMethod !== 'RAZORPAY') return;
+    const outstanding = Math.max(0, (selectedOrder.payment?.amount || selectedOrder.total) - (selectedOrder.payment?.refundedAmount || 0));
+    const input = window.prompt(`Refund amount (maximum ₹${outstanding.toFixed(2)})`, outstanding.toFixed(2));
+    if (input === null) return;
+    const amount = Number(input);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > outstanding) { addToast('Enter an amount within the outstanding payment balance.', 'error'); return; }
+    const reason = window.prompt('Refund reason', 'Admin-authorized refund') || 'Admin-authorized refund';
+    setRefunding(true);
+    try {
+      await createAdminRefund(adminToken, selectedOrder.id, amount, reason, crypto.randomUUID());
+      addToast('Refund submitted to Razorpay. Status will update after provider confirmation.', 'success');
+      const response = await loadAdminOrders(adminToken, { page, limit: 50, q: debouncedSearch, status: statusFilter });
+      setOrders(response.orders);
+    } catch (error) { addToast(error instanceof Error ? error.message : 'Could not request refund', 'error'); }
+    finally { setRefunding(false); }
+  };
+
   if (selectedOrder) {
     return (
       <div>
@@ -146,6 +165,7 @@ const {
 <th className="text-right pb-2">Paid Qty</th>
 <th className="text-right pb-2">Free Qty</th>
 <th className="text-right pb-2">Total Qty</th>
+<th className="text-right pb-2">PTR</th>
 <th className="text-right pb-2">Rate</th>
 <th className="text-right pb-2">Total</th>
                   </tr>
@@ -184,6 +204,13 @@ const {
       </td>
 
       <td className="py-2.5 text-right text-[#6B7280]">
+  ₹{Number(
+    products.find((product) => product.id === item.productId)?.ptr ?? 0
+  ).toFixed(2)}
+</td>
+
+
+      <td className="py-2.5 text-right text-[#6B7280]">
         ₹{orderItemPrice(item).toFixed(2)}
       </td>
 
@@ -194,7 +221,7 @@ const {
   );
 })}
                   <tr>
-                    <td colSpan={5} className="pt-3 text-right font-bold">Total</td>
+                    <td colSpan={6} className="pt-3 text-right font-bold">Total</td>
                     <td className="pt-3 text-right font-extrabold text-[#0D9A55] text-base">₹{orderValue(selectedOrder).toLocaleString()}</td>
                   </tr>
                 </tbody>
@@ -327,13 +354,18 @@ const {
 
     <div>
       <p className="text-sm font-bold text-[#1C1C1E]">
-        Cash on Delivery
+        {selectedOrder.paymentMethod === 'RAZORPAY' ? `Razorpay — ${selectedOrder.paymentStatus || 'Pending'}` : 'Cash on Delivery'}
       </p>
       <p className="text-xs text-[#6B7280]">
-        Payment due on delivery
+        {selectedOrder.paymentMethod === 'RAZORPAY' ? `Paid ₹${(selectedOrder.payment?.amount || selectedOrder.total).toLocaleString('en-IN')}${selectedOrder.payment?.refundedAmount ? ` · Refunded ₹${selectedOrder.payment.refundedAmount.toLocaleString('en-IN')}` : ''}` : 'Payment due on delivery'}
       </p>
     </div>
   </div>
+  {selectedOrder.paymentMethod === 'RAZORPAY' && ['CAPTURED', 'PARTIALLY_REFUNDED'].includes(selectedOrder.paymentStatus || '') && (selectedOrder.payment?.refundedAmount || 0) < (selectedOrder.payment?.amount || selectedOrder.total) && (
+    <button type="button" onClick={refundSelectedOrder} disabled={refunding} className="mt-3 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+      {refunding ? 'Submitting refund…' : 'Issue Razorpay refund'}
+    </button>
+  )}
 </div>
 
             <div className="mt-5 pt-4 border-t border-black/[0.06]">

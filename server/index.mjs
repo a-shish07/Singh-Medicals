@@ -8,6 +8,8 @@ import { Resend } from 'resend';
 import { parse } from 'csv-parse/sync';
 import crypto from 'crypto';
 import prismaPackage from '@prisma/client';
+import { canCancelCapturedPayment, refundPaymentState, timingSafeHexEqual, validIdempotencyKey, validRazorpaySignature } from './payment-utils.mjs';
+import { createRazorpayClient } from './razorpay-client.mjs';
 
 const {
   PrismaClient,
@@ -48,6 +50,46 @@ const DEFAULT_GST = 5;
 const SHIPPING_FEE = 45;
 const FREE_SHIPPING_OVER = 4000;
 const money = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const razorpayConfig = () => ({
+  keyId: cleanString(process.env.RAZORPAY_KEY_ID),
+  keySecret: cleanString(process.env.RAZORPAY_KEY_SECRET),
+  webhookSecret: cleanString(process.env.RAZORPAY_WEBHOOK_SECRET),
+});
+
+function requireRazorpay() {
+  const config = razorpayConfig();
+  if (!config.keyId || !config.keySecret) {
+    throw Object.assign(new Error('Online payments are temporarily unavailable.'), { statusCode: 503 });
+  }
+  return config;
+}
+
+async function razorpayRequest(path, options = {}) {
+  const { keyId, keySecret } = requireRazorpay();
+  return createRazorpayClient({ keyId, keySecret })(path, options);
+}
+
+const paymentRateLimitStore = new Map();
+function paymentRateLimit({ windowMs = 60_000, max = 20 } = {}) {
+  return (req, res, next) => {
+    const user = req.user?.id || 'anonymous';
+    const ip = String(req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
+    const key = `${user}:${ip}:${req.path}`;
+    const now = Date.now();
+    const entry = paymentRateLimitStore.get(key);
+    if (!entry || now - entry.startedAt >= windowMs) {
+      paymentRateLimitStore.set(key, { startedAt: now, count: 1 });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      const retryAfter = Math.max(1, Math.ceil((windowMs - (now - entry.startedAt)) / 1000));
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: 'Too many payment requests. Please wait before trying again.' });
+    }
+    next();
+  };
+}
 
 // Numeric pack labels specify strips per box. Any other non-empty pack label
 // is valid and is handled as one sellable unit for quantity calculations.
@@ -283,6 +325,50 @@ app.use((req, res, next) => {
   next();
 });
 
+// Razorpay signs the exact bytes it sends. This route intentionally precedes
+// JSON parsing so signature verification is performed against the raw body.
+app.post('/api/payments/razorpay/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
+  const { webhookSecret } = razorpayConfig();
+  const signature = String(req.headers['x-razorpay-signature'] || '');
+  if (!webhookSecret || !signature) return res.status(401).json({ error: 'Invalid webhook signature.' });
+  const expected = crypto.createHmac('sha256', webhookSecret).update(req.body).digest('hex');
+  if (!timingSafeHexEqual(expected, signature)) {
+    return res.status(401).json({ error: 'Invalid webhook signature.' });
+  }
+
+  try {
+    const payload = JSON.parse(req.body.toString('utf8'));
+    const eventId = cleanString(req.headers['x-razorpay-event-id']);
+    if (!eventId) return res.status(400).json({ error: 'Webhook event identifier is missing.' });
+    try {
+      await prisma.paymentWebhookEvent.create({ data: { providerId: eventId, event: cleanString(payload.event), payload } });
+    } catch (error) {
+      if (error?.code === 'P2002') return res.status(200).json({ ok: true, duplicate: true });
+      throw error;
+    }
+    const entity = payload?.payload?.payment?.entity;
+    if (['payment.captured', 'order.paid'].includes(payload.event) && entity?.order_id && entity?.id) {
+      await markRazorpayCaptured({ razorpayOrderId: entity.order_id, razorpayPaymentId: entity.id, signature: null });
+    } else if (payload.event === 'payment.failed' && entity?.order_id) {
+      await prisma.payment.updateMany({ where: { razorpayOrderId: entity.order_id, status: { not: 'CAPTURED' } }, data: { status: 'FAILED', failureCode: cleanString(entity.error_code) || null, failureDescription: cleanString(entity.error_description) || 'Payment failed.' } });
+    } else if (['refund.processed', 'refund.failed'].includes(payload.event)) {
+      const refundEntity = payload?.payload?.refund?.entity;
+      if (refundEntity?.id) {
+        const refund = await prisma.refund.findUnique({ where: { razorpayRefundId: refundEntity.id } });
+        if (refund) {
+          const status = payload.event === 'refund.processed' ? 'PROCESSED' : 'FAILED';
+          await prisma.refund.update({ where: { id: refund.id }, data: { status, completedAt: status === 'PROCESSED' ? new Date() : null, providerFailure: status === 'FAILED' ? cleanString(refundEntity.error_description) || 'Provider refund failed.' : null } });
+          await refreshPaymentRefundTotal(refund.paymentId);
+        }
+      }
+    }
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Razorpay webhook processing failed:', error?.message);
+    return res.status(500).json({ error: 'Webhook processing failed.' });
+  }
+});
+
 app.use(express.json({ limit: '10mb' }));
 
 // Lightweight in-memory rate limiter for authentication endpoints.
@@ -489,6 +575,7 @@ const serializeOrder = (order) => {
     shippingTotal,
     grandTotal,
     total: grandTotal,
+    payment: serializePayment(order.payments?.[0]),
 
     items: (order.items || []).map((item) => ({
       ...item,
@@ -561,11 +648,245 @@ const sendOrderEmails = async (order, customer) => {
   ]);
 };
 
+async function markRazorpayCaptured({ razorpayOrderId, razorpayPaymentId, signature }) {
+  return prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({ where: { razorpayOrderId } });
+    if (!payment) throw Object.assign(new Error('Payment order not found.'), { statusCode: 404 });
+    if (payment.status === 'CAPTURED') return payment;
+    if (payment.razorpayPaymentId && payment.razorpayPaymentId !== razorpayPaymentId) {
+      throw Object.assign(new Error('Payment attempt does not match this order.'), { statusCode: 400 });
+    }
+    const saved = await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: 'CAPTURED', razorpayPaymentId, ...(signature ? { razorpaySignature: signature } : {}), capturedAt: new Date(), failureCode: null, failureDescription: null },
+    });
+    const order = await tx.order.findUnique({ where: { id: payment.orderId } });
+    if (order?.status === OrderStatus.SUBMITTED) {
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.CONFIRMED, statusHistory: { create: { status: OrderStatus.CONFIRMED, note: 'Online payment captured and verified.' } } },
+      });
+    }
+    return saved;
+  });
+}
+
+async function restoreOrderStock(tx, order) {
+  if (order.stockRestoredAt) return false;
+  for (const item of order.items) {
+    await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: Number(item.totalQuantity ?? item.quantity ?? 0) } } });
+  }
+  return true;
+}
+
+async function cancelOrderAfterPayment({ orderId, reason, note }) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true, payments: true, user: true } });
+    if (!order) throw Object.assign(new Error('Order not found.'), { statusCode: 404 });
+    if (order.status === OrderStatus.CANCELLED) return order;
+    if (![OrderStatus.SUBMITTED, OrderStatus.CONFIRMED].includes(order.status)) throw Object.assign(new Error('Orders cannot be cancelled after they are packed.'), { statusCode: 400 });
+    await restoreOrderStock(tx, order);
+
+// Any non-captured Razorpay payment attempt is no longer payable
+// because the associated order has been cancelled.
+for (const payment of order.payments) {
+  if (
+    payment.provider === 'RAZORPAY' &&
+    ['CREATED', 'PENDING', 'FAILED'].includes(payment.status)
+  ) {
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'FAILED',
+        failureDescription:
+          reason || 'Payment cancelled because the order was cancelled.',
+      },
+    });
+  }
+}
+    return tx.order.update({
+      where: { id: order.id },
+      data: { status: OrderStatus.CANCELLED, cancelledAt: new Date(), cancellationReason: reason || null, ...(order.stockRestoredAt ? {} : { stockRestoredAt: new Date() }), statusHistory: { create: { status: OrderStatus.CANCELLED, note } } },
+      include: { items: true, statusHistory: { orderBy: { createdAt: 'asc' } }, user: true, payments: { include: { refunds: { orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' } } },
+    });
+  });
+}
+
+async function refreshPaymentRefundTotal(paymentId) {
+  return prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        refunds: true,
+        order: {
+          include: {
+            items: true,
+            user: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) return null;
+
+    const { refundedPaise, status } = refundPaymentState(
+      payment.amountPaise,
+      payment.refunds
+    );
+
+    const updatedPayment = await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        refundedPaise,
+        refundStatus: refundedPaise ? status : null,
+        status,
+      },
+    });
+
+    let updatedOrder = payment.order;
+
+    // Only cancel the order after the FULL payment has been refunded.
+    if (
+      status === 'REFUNDED' &&
+      payment.order &&
+      [OrderStatus.SUBMITTED, OrderStatus.CONFIRMED].includes(
+        payment.order.status
+      )
+    ) {
+      const stockWasRestored = await restoreOrderStock(tx, payment.order);
+
+      updatedOrder = await tx.order.update({
+        where: { id: payment.order.id },
+        data: {
+          status: OrderStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancellationReason:
+            payment.order.cancellationReason ||
+            'Order cancelled after successful payment refund.',
+          ...(stockWasRestored && !payment.order.stockRestoredAt
+            ? { stockRestoredAt: new Date() }
+            : {}),
+          statusHistory: {
+            create: {
+              status: OrderStatus.CANCELLED,
+              note: 'Order cancelled automatically after the payment refund was processed.',
+            },
+          },
+        },
+        include: {
+          items: true,
+          statusHistory: {
+            orderBy: { createdAt: 'asc' },
+          },
+          user: true,
+          payments: {
+            include: {
+              refunds: {
+                orderBy: { createdAt: 'desc' },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+    }
+
+    return {
+      payment: updatedPayment,
+      order: updatedOrder,
+    };
+  });
+}
+
+async function requestRefund({ order, payment, requestedById, amountPaise, reason, idempotencyKey }) {
+  if (!['CAPTURED', 'PARTIALLY_REFUNDED', 'REFUND_PENDING'].includes(payment.status) || !payment.razorpayPaymentId) throw Object.assign(new Error('Only a captured online payment can be refunded.'), { statusCode: 409 });
+  if (!Number.isInteger(amountPaise) || amountPaise < 1) throw Object.assign(new Error('Refund amount must be a positive whole number of paise.'), { statusCode: 400 });
+  const processed = await prisma.refund.aggregate({ where: { paymentId: payment.id, status: { in: ['PENDING', 'PROCESSED'] } }, _sum: { amountPaise: true } });
+  if (amountPaise + Number(processed._sum.amountPaise || 0) > payment.amountPaise) throw Object.assign(new Error('Refund amount exceeds the captured payment.'), { statusCode: 400 });
+  let refund;
+  try {
+    refund = await prisma.refund.create({ data: { orderId: order.id, paymentId: payment.id, requestedById, amountPaise, reason: reason || null, idempotencyKey } });
+  } catch (error) {
+    if (error?.code !== 'P2002') throw error;
+    refund = await prisma.refund.findUnique({ where: { idempotencyKey } });
+    if (!refund) throw error;
+    return refund;
+  }
+  try {
+    await prisma.payment.update({ where: { id: payment.id }, data: { status: 'REFUND_PENDING', refundStatus: 'REFUND_PENDING' } });
+    const remote = await razorpayRequest(`/payments/${encodeURIComponent(payment.razorpayPaymentId)}/refund`, {
+      method: 'POST',
+      headers: { 'X-Razorpay-Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ amount: amountPaise, notes: { application_order_id: order.id, refund_id: refund.id, reason: reason || '' } }),
+    });
+    const status = remote.status === 'processed' ? 'PROCESSED' : 'PENDING';
+    refund = await prisma.refund.update({ where: { id: refund.id }, data: { razorpayRefundId: remote.id, status, completedAt: status === 'PROCESSED' ? new Date() : null } });
+    if (status === 'PROCESSED') await refreshPaymentRefundTotal(payment.id);
+    return refund;
+  } catch (error) {
+    await prisma.refund.update({ where: { id: refund.id }, data: { status: 'FAILED', providerFailure: error.message } }).catch(() => {});
+    await refreshPaymentRefundTotal(payment.id).catch(() => {});
+    throw error;
+  }
+}
+
+async function expireAbandonedPayments() {
+  const minutes = Math.max(1, Number(process.env.PAYMENT_EXPIRY_MINUTES || 30));
+  const cutoff = new Date(Date.now() - minutes * 60_000);
+  const payments = await prisma.payment.findMany({ where: { status: { in: ['CREATED', 'PENDING', 'FAILED'] }, createdAt: { lt: cutoff }, order: { status: OrderStatus.SUBMITTED, paymentMethod: PaymentMethod.RAZORPAY } }, include: { order: { include: { items: true } } }, take: 100 });
+  for (const payment of payments) {
+    // Always reconcile provider truth before releasing reserved stock.
+    if (payment.razorpayOrderId) {
+      let remote;
+      try { remote = await razorpayRequest(`/orders/${encodeURIComponent(payment.razorpayOrderId)}/payments`); }
+      catch (error) { console.error('Payment expiry reconciliation deferred:', error.message); continue; }
+      const captured = remote?.items?.find((item) => item.status === 'captured' && Number(item.amount) === payment.amountPaise && item.currency === payment.currency);
+      if (captured) { await markRazorpayCaptured({ razorpayOrderId: payment.razorpayOrderId, razorpayPaymentId: captured.id, signature: null }); continue; }
+    }
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.payment.findUnique({ where: { id: payment.id }, include: { order: { include: { items: true } } } });
+      if (!current || !['CREATED', 'PENDING', 'FAILED'].includes(current.status) || current.order.status !== OrderStatus.SUBMITTED) return;
+      await restoreOrderStock(tx, current.order);
+      await tx.payment.update({ where: { id: current.id }, data: { status: 'EXPIRED', failureDescription: current.failureDescription || 'Payment session expired.' } });
+      await tx.order.update({ where: { id: current.orderId }, data: { status: OrderStatus.CANCELLED, cancelledAt: new Date(), cancellationReason: 'Unpaid online payment expired.', ...(current.order.stockRestoredAt ? {} : { stockRestoredAt: new Date() }), statusHistory: { create: { status: OrderStatus.CANCELLED, note: 'Unpaid online payment expired; stock restored.' } } } });
+    });
+  }
+  return payments.length;
+}
+
+const serializePayment = (payment) => payment ? ({
+  id: payment.id,
+  status: payment.status,
+  method: payment.provider,
+  amount: Number(payment.amountPaise) / 100,
+  currency: payment.currency,
+  razorpayOrderId: payment.razorpayOrderId,
+  razorpayPaymentId: payment.razorpayPaymentId,
+  capturedAt: payment.capturedAt,
+  refundStatus: payment.refundStatus,
+  refundedAmount: Number(payment.refundedPaise || 0) / 100,
+  refunds: (payment.refunds || []).map((refund) => ({ id: refund.id, amount: Number(refund.amountPaise) / 100, status: refund.status, reason: refund.reason, createdAt: refund.createdAt, completedAt: refund.completedAt })),
+}) : null;
+
+function checkoutResponse(order) {
+  const payment = order.payments?.[0];
+  if (order.paymentMethod !== PaymentMethod.RAZORPAY) return serializeOrder(order);
+  if (!payment?.razorpayOrderId) {
+    throw Object.assign(new Error('The original payment session is still being created. Retry shortly with the same idempotency key.'), { statusCode: 409 });
+  }
+  return {
+    ...serializeOrder(order),
+    payment: serializePayment(payment),
+    razorpay: { keyId: razorpayConfig().keyId, orderId: payment.razorpayOrderId, amount: payment.amountPaise, currency: payment.currency },
+  };
+}
+
 const orderListSelect = {
   id: true, orderNumber: true, userId: true, deliveryName: true, deliveryShop: true, deliveryPhone: true, deliveryAddress: true,
   subtotal: true, gstTotal: true, shippingTotal: true, grandTotal: true, status: true, paymentMethod: true,
   cancelledAt: true, cancellationReason: true, deliveryPartner: true, trackingId: true, invoiceFileName: true, invoiceUploadedAt: true, invoiceUrl: true, createdAt: true,
   items: { select: { productId: true, productName: true, unitPrice: true, quantity: true, paidQuantity: true, freeQuantity: true, totalQuantity: true, isFree: true } },
+  payments: { select: { status: true, provider: true, razorpayOrderId: true, razorpayPaymentId: true, amountPaise: true, capturedAt: true, refundedPaise: true, refundStatus: true, refunds: { select: { id: true, amountPaise: true, status: true, reason: true, createdAt: true, completedAt: true }, orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 1 },
 };
 
 const sendCancellationEmails = async (order, customer) => {
@@ -576,6 +897,29 @@ const sendCancellationEmails = async (order, customer) => {
     adminMail ? sendMail({ to: adminMail, subject: `Order cancelled by customer — ${order.orderNumber}`, html: `<h2>Customer cancelled an order</h2><p><strong>${escapeHtml(order.deliveryName)}</strong> cancelled order <strong>${escapeHtml(order.orderNumber)}</strong>.</p>${reasonHtml}` }) : Promise.resolve(),
   ]);
 };
+
+// For serverless hosts, invoke this from the platform scheduler every few minutes.
+// A separate secret prevents this operational endpoint from becoming public.
+app.post('/api/internal/payments/reconcile', async (req, res, next) => {
+  try {
+    const secret = cleanString(process.env.PAYMENT_RECONCILIATION_SECRET);
+    const supplied = cleanString(req.headers.authorization).replace(/^Bearer\s+/i, '');
+    if (!secret || !timingSafeHexEqual(crypto.createHash('sha256').update(secret).digest('hex'), crypto.createHash('sha256').update(supplied).digest('hex'))) {
+      return res.status(401).json({ error: 'Unauthorized.' });
+    }
+    const scanned = await expireAbandonedPayments();
+    res.json({ ok: true, scanned });
+  } catch (error) { next(error); }
+});
+
+// Reconcile first and only then release stock for an abandoned online checkout.
+// Disable in a dedicated worker process by setting PAYMENT_RECONCILIATION_INTERVAL_MS=0.
+const paymentReconciliationInterval = Number(process.env.PAYMENT_RECONCILIATION_INTERVAL_MS || 5 * 60_000);
+if (!process.env.VERCEL && paymentReconciliationInterval > 0) {
+  const timer = setInterval(() => void expireAbandonedPayments().catch((error) => console.error('Payment reconciliation failed:', error.message)), paymentReconciliationInterval);
+  timer.unref?.();
+  void expireAbandonedPayments().catch((error) => console.error('Initial payment reconciliation failed:', error?.stack || error));
+}
 
 /* ============================================================================
    HEALTH / BOOTSTRAP
@@ -600,9 +944,7 @@ app.get('/api/bootstrap', async (_req, res, next) => {
       products: products.map(serializeProduct),
       orders: [],
     });
-  } catch (error) {
-    next(error);
-  }
+  } catch (error) { next(error); }
 });
 
 /* ============================================================================
@@ -936,16 +1278,57 @@ async function uploadToCloudinary(file, folder, resourceType = 'image') {
   return result.secure_url;
 }
 
-app.post('/api/orders/:id/cancel', authenticate, async (req, res, next) => {
+app.post('/api/orders/:id/cancel', authenticate, paymentRateLimit({ max: 8, windowMs: 60_000 }), async (req, res, next) => {
   try {
     const reason = cleanString(req.body.reason);
-    const order = await prisma.$transaction(async (tx) => {
-      const current = await tx.order.findFirst({ where: { userId: req.user.id, OR: [{ id: req.params.id }, { orderNumber: req.params.id }] }, include: { items: true, user: true } });
-      if (!current) throw Object.assign(new Error('Order not found.'), { statusCode: 404 });
-      if (![OrderStatus.SUBMITTED, OrderStatus.CONFIRMED].includes(current.status)) throw Object.assign(new Error('Orders cannot be cancelled after they are packed.'), { statusCode: 400 });
-      if (!current.stockRestoredAt) for (const item of current.items) await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: Number(item.totalQuantity ?? item.quantity ?? 0) } } });
-      return tx.order.update({ where: { id: current.id }, data: { status: OrderStatus.CANCELLED, cancelledAt: new Date(), cancellationReason: reason || null, ...(!current.stockRestoredAt ? { stockRestoredAt: new Date() } : {}), statusHistory: { create: { status: OrderStatus.CANCELLED, note: reason ? `Cancelled by customer: ${reason}` : 'Cancelled by customer. Stock restored.' } } }, include: { items: true, statusHistory: { orderBy: { createdAt: 'asc' } }, user: true } });
-    });
+    const current = await prisma.order.findFirst({ where: { userId: req.user.id, OR: [{ id: req.params.id }, { orderNumber: req.params.id }] }, include: { payments: { include: { refunds: true }, orderBy: { createdAt: 'desc' } } } });
+    if (!current) throw Object.assign(new Error('Order not found.'), { statusCode: 404 });
+    if (current.status === OrderStatus.CANCELLED) return res.json(serializeOrder(current));
+
+    const pendingPayment = current.payments.find(
+  (payment) =>
+    payment.provider === 'RAZORPAY' &&
+    ['CREATED', 'PENDING', 'FAILED'].includes(payment.status) &&
+    payment.razorpayOrderId
+);
+
+if (pendingPayment?.razorpayOrderId) {
+  try {
+    const remote = await razorpayRequest(
+      `/orders/${encodeURIComponent(
+        pendingPayment.razorpayOrderId
+      )}/payments`
+    );
+
+    const capturedRemote = remote?.items?.find(
+      (item) =>
+        item.status === 'captured' &&
+        Number(item.amount) === pendingPayment.amountPaise &&
+        item.currency === pendingPayment.currency
+    );
+
+    if (capturedRemote) {
+      await markRazorpayCaptured({
+        razorpayOrderId: pendingPayment.razorpayOrderId,
+        razorpayPaymentId: capturedRemote.id,
+        signature: null,
+      });
+    }
+  } catch (error) {
+    console.error(
+      'Unable to reconcile Razorpay before cancellation:',
+      error.message
+    );
+  }
+}
+
+    const captured = current.payments.find((payment) => ['CAPTURED', 'PARTIALLY_REFUNDED', 'REFUND_PENDING'].includes(payment.status));
+    if (captured) {
+      if (captured.status === 'REFUND_PENDING') return res.status(202).json({ pendingRefund: true, message: 'A refund is already awaiting provider confirmation.' });
+      const refund = await requestRefund({ order: current, payment: captured, requestedById: req.user.id, amountPaise: captured.amountPaise - Number(captured.refundedPaise || 0), reason: reason || 'Customer cancellation', idempotencyKey: `cancel-${current.id}` });
+      if (refund.status !== 'PROCESSED') return res.status(202).json({ pendingRefund: true, refund: { id: refund.id, status: refund.status }, message: 'Refund is pending provider confirmation; the order remains active until it completes.' });
+    }
+    const order = await cancelOrderAfterPayment({ orderId: current.id, reason, note: captured ? 'Customer cancellation after confirmed online refund. Stock restored.' : (reason ? `Cancelled by customer: ${reason}` : 'Cancelled by customer. Stock restored.') });
     void sendCancellationEmails(order, order.user).catch((error) => console.error('Cancellation email delivery failed:', error.message));
     res.json(serializeOrder(order));
   } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
@@ -1005,7 +1388,7 @@ app.post('/api/contact', async (req, res, next) => {
   }
 });
 
-app.post('/api/orders', authenticate, async (req, res, next) => {
+app.post('/api/orders', authenticate, paymentRateLimit({ max: 10, windowMs: 60_000 }), async (req, res, next) => {
   try {
     const {
       items,
@@ -1015,6 +1398,15 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
       deliveryAddress,
       paymentMethod,
     } = req.body;
+    const idempotencyKey = cleanString(req.headers['idempotency-key']);
+    if (!validIdempotencyKey(idempotencyKey)) {
+      return res.status(400).json({ error: 'A valid Idempotency-Key is required to place an order.' });
+    }
+    const replay = await prisma.order.findUnique({
+      where: { userId_idempotencyKey: { userId: req.user.id, idempotencyKey } },
+      include: { items: true, payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    if (replay) return res.status(200).json(checkoutResponse(replay));
 
     if (
       !Array.isArray(items) ||
@@ -1110,13 +1502,17 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
     }
     const subtotal = money(lines.reduce((sum, line) => sum + line.taxableAmount, 0));
     const gstTotal = money(subtotal * DEFAULT_GST / 100);
+   
     const shippingTotal = subtotal > FREE_SHIPPING_OVER ? 0 : SHIPPING_FEE;
     const grandTotal = money(subtotal + gstTotal + shippingTotal);
 
-    const safePaymentMethod =
-      paymentMethod === PaymentMethod.COD
-        ? PaymentMethod.COD
-        : PaymentMethod.COD;
+    const safePaymentMethod = paymentMethod === PaymentMethod.RAZORPAY
+      ? PaymentMethod.RAZORPAY
+      : PaymentMethod.COD;
+    const amountPaise = Math.round(grandTotal * 100);
+    if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0 || amountPaise > 10_000_000_00) {
+      return res.status(400).json({ error: 'Order amount is invalid.' });
+    }
 
     const order = await prisma.$transaction(
       async (tx) => {
@@ -1145,6 +1541,11 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
               grandTotal,
               paymentMethod:
                 safePaymentMethod,
+              idempotencyKey,
+
+              ...(safePaymentMethod === PaymentMethod.RAZORPAY ? {
+                payments: { create: { provider: 'RAZORPAY', status: 'CREATED', amountPaise, currency: 'INR' } },
+              } : {}),
 
               items: {
                 create:
@@ -1166,10 +1567,7 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
               },
             },
 
-            include: {
-              items: true,
-              statusHistory: true,
-            },
+            include: { items: true, statusHistory: true, payments: true },
           });
 
         // Deduct stock atomically inside the same transaction.
@@ -1205,22 +1603,58 @@ app.post('/api/orders', authenticate, async (req, res, next) => {
           data: {
             stockDeductedAt: new Date(),
           },
-          include: {
-            items: true,
-            statusHistory: true,
-          },
+          include: { items: true, statusHistory: true, payments: true },
         });
 
         return savedOrder;
       }
     );
 
-    await sendOrderEmails(order, req.user);
+    if (safePaymentMethod === PaymentMethod.COD) {
+      await sendOrderEmails(order, req.user);
+      return res.status(201).json(serializeOrder(order));
+    }
 
-    res.status(201).json(
-      serializeOrder(order)
+    const payment = order.payments?.[0];
+    try {
+      const razorpayOrder = await razorpayRequest('/orders', {
+        method: 'POST',
+        body: JSON.stringify({ amount: amountPaise, currency: 'INR', receipt: order.orderNumber, notes: { application_order_id: order.id } }),
+      });
+      await prisma.payment.update({ where: { id: payment.id }, data: { razorpayOrderId: razorpayOrder.id, status: 'PENDING' } });
+      return res.status(201).json({
+        ...serializeOrder(order),
+        payment: serializePayment({ ...payment, razorpayOrderId: razorpayOrder.id, status: 'PENDING' }),
+        razorpay: { keyId: razorpayConfig().keyId, orderId: razorpayOrder.id, amount: amountPaise, currency: 'INR' },
+      });
+   } catch (error) {
+  await prisma.payment.update({
+    where: { id: payment.id },
+    data: {
+      status: 'FAILED',
+      failureDescription: 'Unable to create a payment session.',
+    },
+  }).catch(() => {});
+
+  await cancelOrderAfterPayment({
+    orderId: order.id,
+    reason: 'Online payment session could not be created.',
+    note: 'Online payment session creation failed; order cancelled and stock restored.',
+  }).catch((cancelError) => {
+    console.error(
+      'Failed to cancel order after payment-session creation failure:',
+      cancelError
     );
+  });
+
+  throw error;
+}
   } catch (error) {
+    if (error?.code === 'P2002') {
+      const idempotencyKey = cleanString(req.headers['idempotency-key']);
+      const replay = await prisma.order.findUnique({ where: { userId_idempotencyKey: { userId: req.user.id, idempotencyKey } }, include: { items: true, payments: { orderBy: { createdAt: 'desc' }, take: 1 } } });
+      if (replay) return res.status(200).json(checkoutResponse(replay));
+    }
     next(error);
   }
 });
@@ -1325,6 +1759,64 @@ app.get('/api/admin/stats', authenticate, adminOnly, async (_req, res, next) => 
     ]);
     res.json({ totalCustomers, totalOrders, totalProducts, pendingOrders, fulfilledOrders, totalRevenue: Number(revenue._sum.grandTotal || 0) });
   } catch (error) { next(error); }
+});
+
+app.post('/api/payments/razorpay/verify', authenticate, paymentRateLimit({ max: 12, windowMs: 60_000 }), async (req, res, next) => {
+  try {
+    const razorpayOrderId = cleanString(req.body.razorpay_order_id);
+    const razorpayPaymentId = cleanString(req.body.razorpay_payment_id);
+    const signature = cleanString(req.body.razorpay_signature);
+    if (!razorpayOrderId || !razorpayPaymentId || !signature) return res.status(400).json({ error: 'Incomplete payment confirmation.' });
+    const { keySecret } = requireRazorpay();
+    const expected = crypto.createHmac('sha256', keySecret).update(`${razorpayOrderId}|${razorpayPaymentId}`).digest('hex');
+    if (!validRazorpaySignature(keySecret, razorpayOrderId, razorpayPaymentId, signature)) {
+      console.warn('Rejected Razorpay payment signature for order:', razorpayOrderId);
+      return res.status(400).json({ error: 'Payment verification failed.' });
+    }
+    const payment = await prisma.payment.findUnique({ where: { razorpayOrderId }, include: { order: true } });
+    if (!payment || payment.order.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found.' });
+    const remotePayment = await razorpayRequest(`/payments/${encodeURIComponent(razorpayPaymentId)}`);
+    if (remotePayment.order_id !== razorpayOrderId || remotePayment.status !== 'captured' || Number(remotePayment.amount) !== payment.amountPaise || remotePayment.currency !== payment.currency) {
+      return res.status(409).json({ error: 'Payment is still being verified. Please do not pay again.' });
+    }
+    const saved = await markRazorpayCaptured({ razorpayOrderId, razorpayPaymentId, signature });
+    const order = await prisma.order.findUnique({ where: { id: payment.orderId }, include: { items: true, payments: { orderBy: { createdAt: 'desc' } } } });
+    return res.json({ order: serializeOrder(order), payment: serializePayment(saved) });
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+app.post('/api/payments/razorpay/retry', authenticate, paymentRateLimit({ max: 6, windowMs: 60_000 }), async (req, res, next) => {
+  try {
+    const orderId = cleanString(req.body.orderId);
+    const order = await prisma.order.findFirst({ where: { userId: req.user.id, OR: [{ id: orderId }, { orderNumber: orderId }] }, include: { payments: true } });
+    if (!order || order.paymentMethod !== PaymentMethod.RAZORPAY) return res.status(404).json({ error: 'Online-payment order not found.' });
+    if (order.status === OrderStatus.CANCELLED || order.payments.some((payment) => payment.status === 'CAPTURED')) return res.status(409).json({ error: 'This order cannot be paid again.' });
+    const amountPaise = Math.round(Number(order.grandTotal) * 100);
+    const payment = await prisma.payment.create({ data: { orderId: order.id, provider: 'RAZORPAY', status: 'CREATED', amountPaise, currency: 'INR' } });
+    try {
+      const remote = await razorpayRequest('/orders', { method: 'POST', body: JSON.stringify({ amount: amountPaise, currency: 'INR', receipt: `${order.orderNumber}-${payment.id.slice(-6)}`, notes: { application_order_id: order.id, payment_attempt_id: payment.id } }) });
+      const saved = await prisma.payment.update({ where: { id: payment.id }, data: { razorpayOrderId: remote.id, status: 'PENDING' } });
+      return res.json({ order: serializeOrder(order), payment: serializePayment(saved), razorpay: { keyId: razorpayConfig().keyId, orderId: remote.id, amount: amountPaise, currency: 'INR' } });
+    } catch (error) {
+      await prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED', failureDescription: 'Unable to create a retry payment session.' } }).catch(() => {});
+      throw error;
+    }
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+app.post('/api/admin/orders/:id/refunds', authenticate, adminOnly, paymentRateLimit({ max: 10, windowMs: 60_000 }), async (req, res, next) => {
+  try {
+    const idempotencyKey = cleanString(req.headers['idempotency-key']);
+    if (!validIdempotencyKey(idempotencyKey)) return res.status(400).json({ error: 'A valid Idempotency-Key is required for refunds.' });
+    const order = await prisma.order.findFirst({ where: { OR: [{ id: req.params.id }, { orderNumber: req.params.id }] }, include: { payments: { include: { refunds: true }, orderBy: { createdAt: 'desc' } } } });
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    const payment = order.payments.find((item) => ['CAPTURED', 'PARTIALLY_REFUNDED', 'REFUND_PENDING'].includes(item.status));
+    if (!payment) return res.status(409).json({ error: 'There is no captured online payment to refund.' });
+    const amountPaise = Math.round(Number(req.body.amount) * 100);
+    const refund = await requestRefund({ order, payment, requestedById: req.user.id, amountPaise, reason: cleanString(req.body.reason), idempotencyKey });
+    const refreshedPayment = await prisma.payment.findUnique({ where: { id: payment.id }, include: { refunds: { orderBy: { createdAt: 'desc' } } } });
+    res.status(refund.status === 'PENDING' ? 202 : 200).json({ refund, payment: serializePayment(refreshedPayment) });
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
 });
 
 app.post('/api/admin/orders/:id/invoice', authenticate, adminOnly, upload.single('invoice'), async (req, res, next) => {
@@ -2364,6 +2856,13 @@ app.patch(
         return res.status(400).json({
           error: `Order is already ${status}.`,
         });
+      }
+
+      if (status === OrderStatus.CANCELLED) {
+        const captured = await prisma.payment.findFirst({ where: { orderId: target.id, status: { in: ['CAPTURED', 'PARTIALLY_REFUNDED', 'REFUND_PENDING'] } } });
+        if (captured && !canCancelCapturedPayment(captured)) {
+          return res.status(409).json({ error: 'Captured online payments must be fully refunded through the refund endpoint before cancellation.' });
+        }
       }
 
       // if (status === OrderStatus.DISPATCHED && (!trackingId || !deliveryPartner)) {

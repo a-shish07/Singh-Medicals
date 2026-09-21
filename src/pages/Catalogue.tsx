@@ -1172,13 +1172,7 @@ export default function Catalogue() {
 
         // Keep the existing product context aligned with the current page.
         // Cart-only products are fetched separately by AppProvider when needed.
-        setProducts((previous) => {
-          const cartIds = new Set(cartItems.map((item) => item.productId));
-          const retained = previous.filter((product) => cartIds.has(product.id));
-          const byId = new Map(retained.map((product) => [product.id, product]));
-          response.products.forEach((product: Product) => byId.set(product.id, product));
-          return [...byId.values()];
-        });
+       setProducts(response.products);
       } catch (error) {
         if (cancelled || currentRequest !== requestId.current) return;
         setCatalogueProducts([]);
@@ -1200,7 +1194,7 @@ export default function Catalogue() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, category, company, page, addToast, setProducts, cartItems]);
+  }, [debouncedSearch, category, company, page, addToast, setProducts]);
 
   const filtered = catalogueProducts;
 

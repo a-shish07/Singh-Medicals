@@ -33,6 +33,7 @@ import {
   loadCustomerProfile,
   updateCustomerProfile,
   getAuthenticatedUser,
+  verifyRazorpayPayment as apiVerifyRazorpayPayment,
 } from "./lib/api";
 
 import type {
@@ -179,6 +180,8 @@ adminLogin: (
 
   confirmedOrderId: string;
   placeOrder: (details: CheckoutDetails) => Promise<void>;
+  startOnlinePayment: (details: CheckoutDetails) => Promise<{ orderId: string; razorpay: { keyId: string; orderId: string; amount: number; currency: string } }>;
+  confirmOnlinePayment: (payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => Promise<void>;
   updateOrderStatus: (orderId: string, status: OrderStatus, trackingId?: string, deliveryPartner?: string) => Promise<void>;
   sendTrackingEmail: (
   orderId: string,
@@ -206,6 +209,7 @@ const CUSTOMER_PROFILE_KEY = "singh.customerProfile";
 const CUSTOMER_TOKEN_KEY = "singh.customerToken";
 const ADMIN_TOKEN_KEY = "singh.adminToken";
 const CART_ITEMS_KEY = "singh.cartItems";
+const CHECKOUT_IDEMPOTENCY_KEY = "singh.checkoutIdempotency";
 
 function safeRead<T>(key: string): T | null {
   try {
@@ -238,6 +242,19 @@ function getStoredString(key: string) {
     return window.localStorage.getItem(key) || "";
   } catch {
     return "";
+  }
+}
+
+function checkoutIdempotencyKey(cart: CartItem[], paymentMethod: 'COD' | 'RAZORPAY', details: CheckoutDetails) {
+  const cartFingerprint = `${paymentMethod}:${cart.map((item) => `${item.productId}:${item.quantity}`).sort().join('|')}:${details.shopName}:${details.address}:${details.contact}`;
+  try {
+    const existing = safeRead<{ cartFingerprint: string; key: string }>(CHECKOUT_IDEMPOTENCY_KEY);
+    if (existing?.cartFingerprint === cartFingerprint && /^[A-Za-z0-9_-]{16,128}$/.test(existing.key)) return existing.key;
+    const key = crypto.randomUUID();
+    safeWrite(CHECKOUT_IDEMPOTENCY_KEY, { cartFingerprint, key });
+    return key;
+  } catch {
+    return crypto.randomUUID();
   }
 }
 
@@ -793,6 +810,7 @@ export function AppProvider({
 
   const clearCart = useCallback(() => {
     setCartItems([]);
+    safeRemove(CHECKOUT_IDEMPOTENCY_KEY);
   }, []);
 
   const cartCount = cartItems.reduce(
@@ -1075,6 +1093,7 @@ const saveCustomerProfile = useCallback(
           quantity: item.quantity,
         })),
         token: customerToken,
+        idempotencyKey: checkoutIdempotencyKey(cartItems, 'COD', details),
       });
 
       setOrders((prev) => [response.order, ...prev]);
@@ -1110,9 +1129,26 @@ const saveCustomerProfile = useCallback(
     [adminToken]
   );
 
+  const startOnlinePayment = useCallback(async (details: CheckoutDetails) => {
+    if (!customerToken) throw new Error('Please sign in before paying.');
+    const response = await apiCreateOrder({ shopName: details.shopName, address: details.address, contact: details.contact, retailerName: customerProfile?.retailerName || details.shopName, items: cartItems.map((item) => ({ productId: item.productId, quantity: item.quantity })), token: customerToken, paymentMethod: 'RAZORPAY', idempotencyKey: checkoutIdempotencyKey(cartItems, 'RAZORPAY', details) });
+    if (!response.razorpay) throw new Error('Could not start secure payment.');
+    return { orderId: response.order.id, razorpay: response.razorpay };
+  }, [cartItems, customerProfile, customerToken]);
+
+  const confirmOnlinePayment = useCallback(async (payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+    if (!customerToken) throw new Error('Please sign in before verifying payment.');
+    const response = await apiVerifyRazorpayPayment(customerToken, payload);
+    setOrders((prev) => [response.order, ...prev.filter((order) => order.id !== response.order.id)]);
+    setConfirmedOrderId(response.order.id);
+    clearCart();
+    navigate('confirmation');
+  }, [clearCart, customerToken, navigate]);
+
   const cancelOrder = useCallback(async (orderId: string, reason?: string) => {
     if (!customerToken) throw new Error("Please sign in to cancel an order.");
     const response = await apiCancelCustomerOrder(customerToken, orderId, reason);
+    if ('pendingRefund' in response) throw new Error('Your refund is pending confirmation. The order will be cancelled when Razorpay confirms it.');
     setOrders((prev) => prev.map((order) => order.id === orderId ? response.order : order));
   }, [customerToken]);
 
@@ -1220,6 +1256,8 @@ verifyOtp,
         refreshCustomers,
         confirmedOrderId,
         placeOrder,
+        startOnlinePayment,
+        confirmOnlinePayment,
         updateOrderStatus,
         sendTrackingEmail,
         cancelOrder,
