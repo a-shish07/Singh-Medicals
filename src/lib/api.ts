@@ -175,6 +175,9 @@ function orderFromApi(order: any): Order {
   // Price charged per paid unit
   rate: Number(item.unitPrice ?? item.rate ?? 0),
 
+   // Original PTR stored with this order item
+  ptr: Number(item.ptr ?? 0),
+
   // Offer quantities
   paidQuantity: Number(
     item.paidQuantity ?? item.quantity ?? 0

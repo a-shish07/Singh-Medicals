@@ -43,12 +43,9 @@ const {
   const filtered = orders;
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
-  const orderItemPrice = (item: (typeof orders)[number]['items'][number]) =>
-    finalOrderItemPrice(
-      products.find((product) => product.id === item.productId),
-      Number(item.paidQuantity ?? item.quantity ?? 0),
-      item.rate
-    );
+  const orderItemPrice = (
+  item: (typeof orders)[number]['items'][number]
+) => Number(item.rate ?? 0);
   const orderItemTotalQuantity = (item: (typeof orders)[number]['items'][number]) =>
     Number(item.totalQuantity ?? (item.paidQuantity ?? item.quantity ?? 0) + (item.freeQuantity ?? 0));
   const orderValue = (order: (typeof orders)[number]) =>
@@ -204,9 +201,7 @@ const {
       </td>
 
       <td className="py-2.5 text-right text-[#6B7280]">
-  ₹{Number(
-    products.find((product) => product.id === item.productId)?.ptr ?? 0
-  ).toFixed(2)}
+ ₹{Number(item.ptr ?? 0).toFixed(2)}
 </td>
 
 

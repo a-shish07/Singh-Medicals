@@ -579,6 +579,7 @@ const serializeOrder = (order) => {
 
     items: (order.items || []).map((item) => ({
       ...item,
+      ptr: Number(item.ptr || 0),
       unitPrice: Number(item.unitPrice || 0),
     })),
   };
@@ -885,7 +886,7 @@ const orderListSelect = {
   id: true, orderNumber: true, userId: true, deliveryName: true, deliveryShop: true, deliveryPhone: true, deliveryAddress: true,
   subtotal: true, gstTotal: true, shippingTotal: true, grandTotal: true, status: true, paymentMethod: true,
   cancelledAt: true, cancellationReason: true, deliveryPartner: true, trackingId: true, invoiceFileName: true, invoiceUploadedAt: true, invoiceUrl: true, createdAt: true,
-  items: { select: { productId: true, productName: true, unitPrice: true, quantity: true, paidQuantity: true, freeQuantity: true, totalQuantity: true, isFree: true } },
+  items: { select: { productId: true, productName: true,ptr:true, unitPrice: true, quantity: true, paidQuantity: true, freeQuantity: true, totalQuantity: true, isFree: true } },
   payments: { select: { status: true, provider: true, razorpayOrderId: true, razorpayPaymentId: true, amountPaise: true, capturedAt: true, refundedPaise: true, refundStatus: true, refunds: { select: { id: true, amountPaise: true, status: true, reason: true, createdAt: true, completedAt: true }, orderBy: { createdAt: 'desc' } } }, orderBy: { createdAt: 'desc' }, take: 1 },
 };
 
@@ -1547,13 +1548,42 @@ app.post('/api/orders', authenticate, paymentRateLimit({ max: 10, windowMs: 60_0
                 payments: { create: { provider: 'RAZORPAY', status: 'CREATED', amountPaise, currency: 'INR' } },
               } : {}),
 
+              
+
               items: {
                 create:
                   lines.flatMap((line) => {
-                    const paid = { productId: line.product.id, productName: line.product.name, unitPrice: line.pricePerPaidStrip, quantity: line.paidStrips, paidQuantity: line.paidStrips, freeQuantity: line.freeStrips, totalQuantity: line.totalStrips, stripsPerBox: line.stripsPerBox, isFree: false };
+                    const orderItemPtr = line.product.ptr
+  ? Number(line.product.ptr)
+  : Number(line.product.mrp) * PTR_FACTOR;
+
+console.log('ORDER ITEM PTR DEBUG:', {
+  productId: line.product.id,
+  productName: line.product.name,
+  mrp: Number(line.product.mrp),
+  productPtr: line.product.ptr,
+  calculatedPtr: orderItemPtr,
+   orderItemPtr,
+});
+
+const paid = {
+  productId: line.product.id,
+  productName: line.product.name,
+  ptr: orderItemPtr,
+  unitPrice: line.pricePerPaidStrip,
+  quantity: line.paidStrips,
+  paidQuantity: line.paidStrips,
+  freeQuantity: line.freeStrips,
+  totalQuantity: line.totalStrips,
+  stripsPerBox: line.stripsPerBox,
+  isFree: false
+};
+
+
                     if (!line.bonusStrips) return [paid];
                     const bonus = stockById.get(line.product.bonusProductId);
-                    return [...[paid], { productId: bonus.id, productName: bonus.name, unitPrice: 0, quantity: 0, paidQuantity: 0, freeQuantity: line.bonusStrips, totalQuantity: line.bonusStrips, stripsPerBox: stripsPerBox(bonus.pack) || 1, isFree: true }];
+                    return [...[paid], { productId: bonus.id, productName: bonus.name,
+                      ptr: money(Number(bonus.mrp) * PTR_FACTOR), unitPrice: 0, quantity: 0, paidQuantity: 0, freeQuantity: line.bonusStrips, totalQuantity: line.bonusStrips, stripsPerBox: stripsPerBox(bonus.pack) || 1, isFree: true }];
                   }),
               },
 

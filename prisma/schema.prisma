@@ -93,7 +93,7 @@ model Product {
 
   // Kept temporarily so the existing customer/order APIs continue working.
   mrp Decimal  @db.Decimal(10, 2)
-  ptr Decimal? @db.Decimal(10, 2)
+  ptr Decimal @db.Decimal(10, 2)
   gst Decimal? @default(5) @db.Decimal(5, 2)
 
   discountType   DiscountType @default(NONE)
@@ -241,6 +241,7 @@ model OrderItem {
   orderId     String
   productId   String
   productName String
+  ptr         Decimal? @db.Decimal(10, 2)
   unitPrice   Decimal @db.Decimal(10, 2)
   quantity    Int
   paidQuantity Int @default(0)

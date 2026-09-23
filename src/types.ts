@@ -71,6 +71,7 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   rate: number;
+  ptr:number;
 
   paidQuantity?: number;
   freeQuantity?: number;
