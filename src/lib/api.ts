@@ -178,6 +178,9 @@ function orderFromApi(order: any): Order {
    // Original PTR stored with this order item
   ptr: Number(item.ptr ?? 0),
 
+  discountValue: Number(item.discountValue ?? 0),
+discountAmount: Number(item.discountAmount ?? 0),
+
   // Offer quantities
   paidQuantity: Number(
     item.paidQuantity ?? item.quantity ?? 0

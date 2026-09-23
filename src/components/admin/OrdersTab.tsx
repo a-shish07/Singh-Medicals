@@ -163,6 +163,7 @@ const {
 <th className="text-right pb-2">Free Qty</th>
 <th className="text-right pb-2">Total Qty</th>
 <th className="text-right pb-2">PTR</th>
+<th className='text-right pb-2'>DISCOUNT</th>
 <th className="text-right pb-2">Rate</th>
 <th className="text-right pb-2">Total</th>
                   </tr>
@@ -204,6 +205,12 @@ const {
  ₹{Number(item.ptr ?? 0).toFixed(2)}
 </td>
 
+<td className="py-2.5 text-right text-[#6B7280]">
+  {Number(item.discountValue ?? 0) > 0
+    ? `${Number(item.discountValue).toFixed(2)}%`
+    : "—"}
+</td>
+
 
       <td className="py-2.5 text-right text-[#6B7280]">
         ₹{orderItemPrice(item).toFixed(2)}
@@ -216,7 +223,7 @@ const {
   );
 })}
                   <tr>
-                    <td colSpan={6} className="pt-3 text-right font-bold">Total</td>
+                    <td colSpan={7} className="pt-3 text-right font-bold">Total</td>
                     <td className="pt-3 text-right font-extrabold text-[#0D9A55] text-base">₹{orderValue(selectedOrder).toLocaleString()}</td>
                   </tr>
                 </tbody>
